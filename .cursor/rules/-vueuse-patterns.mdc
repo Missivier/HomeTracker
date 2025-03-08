@@ -1,0 +1,1365 @@
+---
+description: Patterns et bonnes pratiques pour VueUse
+globs: *.ts, *.vue
+alwaysApply: false
+---
+# Patterns et bonnes pratiques pour VueUse
+
+## Principes généraux
+
+1. Préférer les composables VueUse aux implémentations personnalisées
+   ```ts
+   // ❌ Éviter
+   const isScrolled = ref(false)
+   
+   onMounted(() => {
+     const handleScroll = () => {
+       isScrolled.value = window.scrollY > 50
+     }
+     
+     window.addEventListener('scroll', handleScroll)
+     handleScroll() // Initial check
+     
+     onUnmounted(() => {
+       window.removeEventListener('scroll', handleScroll)
+     })
+   })
+   
+   // ✅ Préférer
+   import { useWindowScroll } from '@vueuse/core'
+   
+   const { y } = useWindowScroll()
+   const isScrolled = computed(() => y.value > 50)
+   ```
+
+2. Importer uniquement les composables utilisés plutôt que l'ensemble
+   ```ts
+   // ❌ Éviter - Impact sur la taille du bundle
+   import { useWindowScroll, useLocalStorage, useMediaQuery } from '@vueuse/core'
+   
+   // ✅ Préférer - Import direct des composables utilisés
+   import { useWindowScroll } from '@vueuse/core'
+   import { useLocalStorage } from '@vueuse/core'
+   import { useMediaQuery } from '@vueuse/core'
+   ```
+
+3. Tirer parti de l'interopérabilité avec Pinia et Vue Router
+   ```ts
+   import { storeToRefs } from 'pinia'
+   import { useRoute } from 'vue-router'
+   import { useStorage } from '@vueuse/core'
+   import { useAuthStore } from '@/stores/auth.store'
+   
+   // Vérifier si l'utilisateur a visité une page spécifique
+   const route = useRoute()
+   const hasSeenIntro = useStorage('has-seen-intro', false)
+   
+   // Observer les changements dans Pinia avec VueUse
+   const authStore = useAuthStore()
+   const { user, isAuthenticated } = storeToRefs(authStore)
+   
+   // Combinaison avec d'autres composables VueUse
+   watch(isAuthenticated, (newValue) => {
+     if (newValue === false) {
+       hasSeenIntro.value = false // Réinitialiser après déconnexion
+     }
+   })
+   ```
+
+## Composables pour le DOM et l'UI
+
+1. Gestion des événements DOM et du cycle de vie
+   ```vue
+   <script setup lang="ts">
+   import { ref } from 'vue'
+   import { 
+     useEventListener, 
+     onClickOutside,
+     useIntersectionObserver,
+     useFocusTrap
+   } from '@vueuse/core'
+   
+   const modal = ref<HTMLElement | null>(null)
+   const modalTrigger = ref<HTMLElement | null>(null)
+   const isModalOpen = ref(false)
+   
+   // Écouter les clics sur le déclencheur
+   useEventListener(modalTrigger, 'click', () => {
+     isModalOpen.value = true
+   })
+   
+   // Fermer la modale au clic à l'extérieur
+   onClickOutside(modal, () => {
+     isModalOpen.value = false
+   })
+   
+   // Piéger le focus dans la modale quand elle est ouverte
+   const { activate, deactivate } = useFocusTrap(modal)
+   
+   watch(isModalOpen, (value) => {
+     if (value) {
+       activate()
+     } else {
+       deactivate()
+     }
+   })
+   
+   // Écouter la touche Echap pour fermer la modale
+   useEventListener('keydown', (e) => {
+     if (e.key === 'Escape' && isModalOpen.value) {
+       isModalOpen.value = false
+     }
+   })
+   </script>
+   ```
+
+2. Composition d'effets pour des comportements complexes
+   ```vue
+   <script setup lang="ts">
+   import { ref, computed } from 'vue'
+   import { 
+     useScroll,
+     useWindowSize,
+     useMouseInElement,
+     useTransition
+   } from '@vueuse/core'
+   
+   const heroSection = ref<HTMLElement | null>(null)
+   
+   // Observer le défilement
+   const { y: scrollY } = useScroll()
+   
+   // Taille de la fenêtre
+   const { width: windowWidth, height: windowHeight } = useWindowSize()
+   
+   // Position de la souris dans l'élément
+   const { isOutside, elementX, elementY } = useMouseInElement(heroSection)
+   
+   // Calculer l'opacité en fonction du défilement
+   const headerOpacity = computed(() => {
+     const threshold = windowHeight.value * 0.5
+     return Math.max(0, Math.min(1, scrollY.value / threshold))
+   })
+   
+   // Effet de parallaxe pour l'arrière-plan
+   const parallaxY = computed(() => {
+     return scrollY.value * 0.5 // 50% de la vitesse de défilement
+   })
+   
+   // Effet 3D pour les éléments au survol de la souris
+   const tiltX = computed(() => {
+     if (isOutside.value) return 0
+     const max = 5 // 5 degrés max
+     const center = elementX.value - (windowWidth.value / 2)
+     return (center / windowWidth.value) * max * -1
+   })
+   
+   const tiltY = computed(() => {
+     if (isOutside.value) return 0
+     const max = 5 // 5 degrés max
+     const center = elementY.value - (windowHeight.value / 2)
+     return (center / windowHeight.value) * max
+   })
+   
+   // Animation fluide avec transition
+   const smoothTiltX = useTransition(tiltX, {
+     duration: 400,
+     transition: [0.25, 0.8, 0.5, 1]
+   })
+   
+   const smoothTiltY = useTransition(tiltY, {
+     duration: 400,
+     transition: [0.25, 0.8, 0.5, 1]
+   })
+   </script>
+   
+   <template>
+     <header :style="{ opacity: headerOpacity }">
+       <!-- Header contenu -->
+     </header>
+     
+     <section 
+       ref="heroSection" 
+       class="hero-section"
+       :style="{
+         transform: `translateY(${parallaxY}px) rotateX(${smoothTiltY}deg) rotateY(${smoothTiltX}deg)`,
+         perspective: '1000px'
+       }"
+     >
+       <!-- Contenu de la section hero -->
+     </section>
+   </template>
+   ```
+
+3. Lazy loading et Intersection Observer
+   ```vue
+   <script setup lang="ts">
+   import { ref } from 'vue'
+   import { useIntersectionObserver } from '@vueuse/core'
+   
+   const imageRef = ref<HTMLElement | null>(null)
+   const { isVisible } = useIntersectionObserver(imageRef, {
+     threshold: 0.1,
+     rootMargin: '50px'
+   })
+   
+   // Source de l'image calculée
+   const imageSrc = computed(() => {
+     return isVisible.value 
+       ? props.src 
+       : 'data:image/gif;base64,R0lGODlhAQABAAAAACH5BAEKAAEALAAAAAABAAEAAAICTAEAOw==' // Image 1x1px transparente
+   })
+   </script>
+   
+   <template>
+     <div ref="imageRef" class="lazy-image-container">
+       <img 
+         :src="imageSrc" 
+         :data-src="props.src"
+         class="lazy-image"
+         :class="{ 'lazy-loaded': isVisible }"
+       />
+     </div>
+   </template>
+   ```
+
+## Gestion de l'état et du stockage
+
+1. Persistance des préférences utilisateur
+   ```ts
+   import { useStorage, usePreferredDark } from '@vueuse/core'
+   
+   export function useThemeSettings() {
+     // Préférence système pour le mode sombre
+     const systemPrefersDark = usePreferredDark()
+     
+     // Paramètre utilisateur stocké dans localStorage
+     const themePreference = useStorage('theme-preference', 'system')
+     
+     // Mode sombre actif calculé
+     const isDarkMode = computed(() => {
+       if (themePreference.value === 'system') {
+         return systemPrefersDark.value
+       }
+       return themePreference.value === 'dark'
+     })
+     
+     // Taille de la police
+     const fontSize = useStorage('font-size', 'medium')
+     
+     // Compact mode (densité d'UI)
+     const isCompactMode = useStorage('compact-mode', false)
+     
+     // Changement de thème
+     function setTheme(theme: 'light' | 'dark' | 'system') {
+       themePreference.value = theme
+     }
+     
+     // Basculer le mode sombre
+     function toggleDarkMode() {
+       // Si déjà en mode manuel, basculer entre light et dark
+       if (themePreference.value !== 'system') {
+         themePreference.value = isDarkMode.value ? 'light' : 'dark'
+       } else {
+         // Si en mode system, passer au mode manuel opposé à la préférence système
+         themePreference.value = systemPrefersDark.value ? 'light' : 'dark'
+       }
+     }
+     
+     // Définir la taille de la police
+     function setFontSize(size: 'small' | 'medium' | 'large' | 'x-large') {
+       fontSize.value = size
+     }
+     
+     // Basculer le mode compact
+     function toggleCompactMode() {
+       isCompactMode.value = !isCompactMode.value
+     }
+     
+     return {
+       themePreference,
+       isDarkMode,
+       fontSize,
+       isCompactMode,
+       setTheme,
+       toggleDarkMode,
+       setFontSize,
+       toggleCompactMode
+     }
+   }
+   ```
+
+2. Stockage sécurisé avec chiffrement
+   ```ts
+   import { useStorage } from '@vueuse/core'
+   import CryptoJS from 'crypto-js'
+   
+   // Clé secrète (dans une application réelle, ne la codez pas en dur)
+   const SECRET_KEY = import.meta.env.VITE_STORAGE_SECRET || 'default-secret-key'
+   
+   export function useSecureStorage<T>(key: string, initialValue: T) {
+     return useStorage(
+       key,
+       initialValue,
+       // Stockage personnalisé avec chiffrement/déchiffrement
+       {
+         // Stocker dans localStorage par défaut
+         storage: localStorage,
+         
+         // Chiffrer lors de l'écriture
+         serializer: {
+           read: (v: string) => {
+             try {
+               const decrypted = CryptoJS.AES.decrypt(v, SECRET_KEY).toString(CryptoJS.enc.Utf8)
+               return JSON.parse(decrypted) as T
+             } catch (e) {
+               console.error('Failed to decrypt:', e)
+               return initialValue
+             }
+           },
+           write: (v: T) => {
+             try {
+               const encrypted = CryptoJS.AES.encrypt(JSON.stringify(v), SECRET_KEY).toString()
+               return encrypted
+             } catch (e) {
+               console.error('Failed to encrypt:', e)
+               return ''
+             }
+           },
+         },
+       }
+     )
+   }
+   
+   // Utilisation
+   const userData = useSecureStorage('user-data', {
+     preferences: {},
+     savedItems: [],
+     history: []
+   })
+   ```
+
+3. Débounce et Throttling pour les entrées utilisateur
+   ```vue
+   <script setup lang="ts">
+   import { ref } from 'vue'
+   import { 
+     useDebounceFn, 
+     useThrottleFn 
+   } from '@vueuse/core'
+   
+   const searchQuery = ref('')
+   const searchResults = ref([])
+   const isLoading = ref(false)
+   
+   // Fonction de recherche avec debounce (attend que l'utilisateur arrête de taper)
+   const debouncedSearch = useDebounceFn(async (query) => {
+     if (!query.trim()) {
+       searchResults.value = []
+       return
+     }
+     
+     try {
+       isLoading.value = true
+       const results = await api.search(query)
+       searchResults.value = results
+     } catch (error) {
+       console.error('Search error:', error)
+       searchResults.value = []
+     } finally {
+       isLoading.value = false
+     }
+   }, 300) // Attendre 300ms après la dernière frappe
+   
+   // Mise à jour des suggestions avec throttle (limite la fréquence)
+   const updateSuggestions = useThrottleFn(async (query) => {
+     if (!query.trim() || query.length < 3) return
+     
+     try {
+       const suggestions = await api.getSuggestions(query)
+       // Mettre à jour les suggestions
+     } catch (error) {
+       console.error('Suggestions error:', error)
+     }
+   }, 500) // Exécuter au maximum toutes les 500ms
+   
+   // Réagir aux changements de la requête
+   watch(searchQuery, (newQuery) => {
+     debouncedSearch(newQuery)
+     updateSuggestions(newQuery)
+   })
+   </script>
+   
+   <template>
+     <div class="search-container">
+       <input
+         v-model="searchQuery"
+         type="search"
+         placeholder="Search..."
+         class="search-input"
+       />
+       
+       <div v-if="isLoading" class="search-loader">
+         <LoadingSpinner />
+       </div>
+       
+       <ul v-else-if="searchResults.length > 0" class="search-results">
+         <li v-for="result in searchResults" :key="result.id" class="search-result-item">
+           {{ result.title }}
+         </li>
+       </ul>
+     </div>
+   </template>
+   ```
+
+## Communication réseau et API
+
+1. Composable d'appels API avec état
+   ```ts
+   import { ref, computed } from 'vue'
+   import { useAxios, useFetch } from '@vueuse/core'
+   import axios from 'axios'
+   
+   // Exemple avec useAxios
+   export function useApi<T>(url: string, config = {}) {
+     const { data, error, isLoading, execute } = useAxios<T>(url, {
+       ...config,
+       immediate: false // Ne pas exécuter immédiatement
+     })
+     
+     const isError = computed(() => !!error.value)
+     
+     return {
+       data,
+       error,
+       isLoading,
+       isError,
+       execute
+     }
+   }
+   
+   // Exemple avec useFetch
+   export function useApiEndpoint<T>(baseUrl: string) {
+     const data = ref<T | null>(null)
+     const error = ref<Error | null>(null)
+     const isLoading = ref(false)
+     
+     async function fetchData(endpoint: string, options = {}) {
+       const url = `${baseUrl}/${endpoint}`
+       isLoading.value = true
+       error.value = null
+       
+       const { data: responseData, error: responseError } = await useFetch(url, {
+         ...options
+       }).json()
+       
+       if (responseError.value) {
+         error.value = new Error(responseError.value.message || 'Failed to fetch data')
+         data.value = null
+       } else {
+         data.value = responseData.value as T
+       }
+       
+       isLoading.value = false
+       return data.value
+     }
+     
+     return {
+       data,
+       error,
+       isLoading,
+       fetchData
+     }
+   }
+   
+   // Utilisation
+   const usersApi = useApiEndpoint<User[]>('https://api.example.com/users')
+   
+   // Dans un composant
+   onMounted(async () => {
+     await usersApi.fetchData('active', { params: { limit: 10 } })
+   })
+   ```
+
+2. Gestion du chargement asynchrone avec Suspense
+   ```vue
+   <script setup lang="ts">
+   import { ref } from 'vue'
+   import { useAsyncState } from '@vueuse/core'
+   
+   const props = defineProps<{
+     userId: string
+   }>()
+   
+   // Charger les données utilisateur de manière asynchrone
+   const { state: user, isReady, isLoading, error } = useAsyncState(
+     () => api.getUser(props.userId),
+     null, // Valeur initiale
+     {
+       resetOnExecute: true,
+       immediate: true,
+       onError: (e) => console.error('Failed to load user:', e)
+     }
+   )
+   
+   // Fonction pour actualiser les données
+   function refreshUser() {
+     return useAsyncState.execute()
+   }
+   </script>
+   
+   <template>
+     <Suspense>
+       <template #default>
+         <div v-if="isReady && user">
+           <h1>{{ user.name }}</h1>
+           <p>{{ user.email }}</p>
+           <!-- Plus d'informations utilisateur -->
+         </div>
+       </template>
+       
+       <template #fallback>
+         <div class="loading-skeleton">
+           <div class="skeleton-header"></div>
+           <div class="skeleton-text"></div>
+           <div class="skeleton-text"></div>
+         </div>
+       </template>
+     </Suspense>
+     
+     <div v-if="error" class="error-message">
+       {{ error.message }}
+       <button @click="refreshUser">Retry</button>
+     </div>
+   </template>
+   ```
+
+3. Gestion de l'état de la connexion réseau
+   ```vue
+   <script setup lang="ts">
+   import { useNetwork, useTimeoutPoll } from '@vueuse/core'
+   
+   // Surveiller l'état de la connexion réseau
+   const { isOnline, offlineAt, downlink, effectiveType } = useNetwork()
+   
+   // Réagir aux changements de connectivité
+   watch(isOnline, (online) => {
+     if (online) {
+       // Reconnecté - synchroniser les données
+       syncOfflineChanges()
+     } else {
+       // Déconnecté - passer en mode hors ligne
+       enableOfflineMode()
+     }
+   })
+   
+   // Durée de la déconnexion
+   const offlineDuration = computed(() => {
+     if (isOnline.value || !offlineAt.value) return 0
+     return Date.now() - offlineAt.value.getTime()
+   })
+   
+   // Formater la durée
+   const formattedOfflineDuration = computed(() => {
+     const seconds = Math.floor(offlineDuration.value / 1000)
+     const minutes = Math.floor(seconds / 60)
+     const hours = Math.floor(minutes / 60)
+     
+     if (hours > 0) {
+       return `${hours}h ${minutes % 60}m`
+     } else if (minutes > 0) {
+       return `${minutes}m ${seconds % 60}s`
+     } else {
+       return `${seconds}s`
+     }
+   })
+   
+   // Vérifier la connexion au serveur (même en mode "online")
+   const serverAlive = ref(true)
+   
+   // Fonction qui vérifie la connexion au serveur
+   async function checkServerConnection() {
+     try {
+       await fetch('/api/health', { 
+         method: 'HEAD',
+         cache: 'no-store',
+         headers: { 'Cache-Control': 'no-cache' }
+       })
+       serverAlive.value = true
+     } catch (e) {
+       serverAlive.value = false
+     }
+   }
+   
+   // Vérifier périodiquement la connexion au serveur
+   useTimeoutPoll(checkServerConnection, isOnline.value ? 30000 : 60000)
+   </script>
+   
+   <template>
+     <div class="app-container" :class="{ 'offline-mode': !isOnline }">
+       <!-- Barre de statut réseau -->
+       <div v-if="!isOnline || !serverAlive" class="network-status-bar">
+         <template v-if="!isOnline">
+           <OfflineIcon />
+           You are offline ({{ formattedOfflineDuration }})
+         </template>
+         <template v-else-if="!serverAlive">
+           <WarningIcon />
+           Server connection issue
+         </template>
+       </div>
+       
+       <!-- Info connexion pour le débogage -->
+       <div v-if="import.meta.env.DEV" class="network-debug">
+         <p>Downlink: {{ downlink }} Mbps</p>
+         <p>Connection: {{ effectiveType }}</p>
+       </div>
+       
+       <!-- Contenu de l'application -->
+       <main>
+         <!-- ... -->
+       </main>
+     </div>
+   </template>
+   ```
+
+## Responsive et adaptabilité
+
+1. Composable pour les designs adaptatifs
+   ```ts
+   import { 
+     useMediaQuery, 
+     useBreakpoints,
+     useWindowSize
+   } from '@vueuse/core'
+   
+   export function useResponsive() {
+     // Définir les breakpoints standard
+     const breakpoints = useBreakpoints({
+       sm: 640,
+       md: 768,
+       lg: 1024,
+       xl: 1280,
+       '2xl': 1536
+     })
+     
+     // Composables pour les requêtes média
+     const isSmallScreen = breakpoints.smaller('md')
+     const isMediumScreen = breakpoints.between('md', 'lg')
+     const isLargeScreen = breakpoints.between('lg', 'xl')
+     const isExtraLargeScreen = breakpoints.greater('xl')
+     
+     // Détection de l'orientation
+     const isPortrait = useMediaQuery('(orientation: portrait)')
+     const isLandscape = useMediaQuery('(orientation: landscape)')
+     
+     // Détection de dispositif
+     const isReducedMotion = useMediaQuery('(prefers-reduced-motion: reduce)')
+     const isPrintMode = useMediaQuery('print')
+     const isTouch = useMediaQuery('(hover: none) and (pointer: coarse)')
+     const isPwa = ref(window.matchMedia('(display-mode: standalone)').matches)
+     
+     // Dimensions de la fenêtre
+     const { width, height } = useWindowSize()
+     
+     return {
+       // Breakpoints
+       breakpoints,
+       isSmallScreen,
+       isMediumScreen,
+       isLargeScreen,
+       isExtraLargeScreen,
+       
+       // Orientation
+       isPortrait,
+       isLandscape,
+       
+       // Dispositif
+       isReducedMotion,
+       isPrintMode,
+       isTouch,
+       isPwa,
+       
+       // Dimensions
+       width,
+       height
+     }
+   }
+   ```
+
+2. Optimisation pour le mobile
+   ```vue
+   <script setup lang="ts">
+   import { ref, computed } from 'vue'
+   import { 
+     useSwipe, 
+     useBattery,
+     useDeviceOrientation,
+     usePermission
+   } from '@vueuse/core'
+   import { useResponsive } from '@/composables/useResponsive'
+   
+   const appContainer = ref<HTMLElement | null>(null)
+   
+   // Détecter si c'est un appareil mobile
+   const { isTouch, isSmallScreen, isPortrait } = useResponsive()
+   
+   // Gestion du swipe sur mobile
+   const { direction, distanceX, distanceY } = useSwipe(appContainer)
+   
+   // Détecter si le menu doit s'ouvrir par swipe
+   const shouldOpenMenuBySwipe = computed(() => 
+     direction.value === 'right' && distanceX.value > 50
+   )
+   
+   // Gestion de la batterie pour les fonctionnalités gourmandes
+   const { charging, level } = useBattery()
+   
+   // Désactiver certaines animations si la batterie est faible
+   const shouldReduceAnimations = computed(() => 
+     (level.value < 0.2 && !charging.value) || isReducedMotion.value
+   )
+   
+   // Orientation de l'appareil
+   const { alpha, beta, gamma } = useDeviceOrientation()
+   
+   // Vérifier les permissions pour les fonctionnalités avancées
+   const cameraPermission = usePermission('camera')
+   const microphonePermission = usePermission('microphone')
+   const notificationsPermission = usePermission('notifications')
+   
+   // Adapter l'interface en fonction des capacités disponibles
+   const canUseCamera = computed(() => cameraPermission.value === 'granted')
+   const canUseMicrophone = computed(() => microphonePermission.value === 'granted')
+   const canUseNotifications = computed(() => notificationsPermission.value === 'granted')
+   </script>
+   
+   <template>
+     <div 
+       ref="appContainer" 
+       class="app-container"
+       :class="{
+         'reduced-motion': shouldReduceAnimations,
+         'portrait-mode': isPortrait,
+         'touch-device': isTouch
+       }"
+     >
+       <!-- Afficher un mode alternatif pour les appareils à faible batterie -->
+       <div v-if="level < 0.1 && !charging" class="battery-warning">
+         <BatteryLowIcon />
+         Battery is low ({{ Math.round(level * 100) }}%). Some features may be limited.
+       </div>
+       
+       <!-- Composant qui s'adapte à la taille de l'écran -->
+       <div class="responsive-ui">
+         <DesktopView v-if="!isSmallScreen" />
+         <MobileView v-else />
+       </div>
+       
+       <!-- UI adaptée aux interactions tactiles -->
+       <div v-if="isTouch" class="touch-optimized-ui">
+         <button class="touch-button">
+           <span class="touch-area"></span>
+           <span class="label">Touch Me</span>
+         </button>
+       </div>
+     </div>
+   </template>
+   ```
+
+3. Adaptation aux préférences d'accessibilité
+   ```vue
+   <script setup lang="ts">
+   import { computed } from 'vue'
+   import { 
+     usePreferredDark,
+     usePreferredLanguages,
+     usePreferredReducedMotion,
+     usePreferredContrast
+   } from '@vueuse/core'
+   
+   // Préférences système
+   const isDark = usePreferredDark()
+   const preferredLanguages = usePreferredLanguages()
+   const prefersReducedMotion = usePreferredReducedMotion()
+   const prefersHighContrast = usePreferredContrast()
+   
+   // Déterminer la langue principale de l'utilisateur
+   const primaryLanguage = computed(() => {
+     if (preferredLanguages.value.length === 0) return 'en'
+     
+     // Extraire le code de langue sans la région (e.g., 'en' from 'en-US')
+     const lang = preferredLanguages.value[0].split('-')[0]
+     
+     // Vérifier si la langue est supportée par l'application
+     const supportedLanguages = ['en', 'fr', 'es', 'de', 'ja']
+     return supportedLanguages.includes(lang) ? lang : 'en'
+   })
+   
+   // Classe CSS à appliquer pour le contraste élevé
+   const contrastClass = computed(() => {
+     if (prefersHighContrast.value === 'more') return 'high-contrast'
+     if (prefersHighContrast.value === 'custom') return 'custom-contrast'
+     return ''
+   })
+   </script>
+   
+   <template>
+     <div 
+       :class="{
+         'dark-theme': isDark,
+         'reduced-motion': prefersReducedMotion,
+         [contrastClass]: !!contrastClass
+       }"
+       :lang="primaryLanguage"
+     >
+       <!-- Contenu adapté à l'accessibilité -->
+       <template v-if="prefersReducedMotion">
+         <!-- UI sans animation -->
+       </template>
+       <template v-else>
+         <!-- UI avec animation -->
+       </template>
+     </div>
+   </template>
+   ```
+
+## Optimisation des performances
+
+1. Mesure des performances avec VueUse
+   ```ts
+   import { 
+     useRafFn, 
+     useWindowScroll,
+     usePerformanceObserver,
+     useDevtoolsTimelineMarker
+   } from '@vueuse/core'
+   
+   export function usePerformanceMonitoring() {
+     // Observer les métriques de performance
+     const metrics = ref<PerformanceEntry[]>([])
+     const lcp = ref<number | null>(null) // Largest Contentful Paint
+     const fid = ref<number | null>(null) // First Input Delay
+     const cls = ref<number | null>(null) // Cumulative Layout Shift
+     
+     // Observer les métriques Web Vitals
+     usePerformanceObserver((entries) => {
+       // Stocker toutes les métriques
+       metrics.value.push(...entries)
+       
+       // Traiter les métriques spécifiques
+       entries.forEach(entry => {
+         if (entry.name === 'largest-contentful-paint') {
+           lcp.value = entry.startTime
+         } else if (entry.name === 'first-input-delay') {
+           fid.value = entry.duration
+         } else if (entry.name === 'layout-shift') {
+           cls.value = (cls.value || 0) + entry.value
+         }
+       })
+     })
+     
+     // Détecter les drops de FPS
+     const fps = ref(60)
+     let lastTime = performance.now()
+     let frames = 0
+     
+     useRafFn(() => {
+       frames++
+       const now = performance.now()
+       const delta = now - lastTime
+       
+       if (delta > 1000) {
+         fps.value = Math.round((frames * 1000) / delta)
+         frames = 0
+         lastTime = now
+       }
+     })
+     
+     // Suivre les positions de défilement pour la performance
+     const { y: scrollY } = useWindowScroll()
+     let lastScrollY = 0
+     let scrollEvents = 0
+     
+     watch(scrollY, (newY) => {
+       scrollEvents++
+       
+       // Si de nombreux événements de défilement sont déclenchés rapidement
+       if (scrollEvents > 5 && Math.abs(newY - lastScrollY) < 5) {
+         // Ajouter un marqueur de chronologie pour le debugging
+         useDevtoolsTimelineMarker('scroll-jank', 'scroll performance issue detected')
+       }
+       
+       lastScrollY = newY
+       
+       // Réinitialiser le compteur après un certain temps
+       setTimeout(() => {
+         scrollEvents = 0
+       }, 100)
+     })
+     
+     return {
+       metrics,
+       webVitals: { lcp, fid, cls },
+       fps
+     }
+   }
+   ```
+
+2. Memoization et mise en cache
+   ```ts
+   import { computed, ComputedRef } from 'vue'
+   import { createSharedComposable, useMemoize } from '@vueuse/core'
+   
+   // Mise en cache des requêtes API coûteuses
+   export function useDataCache() {
+     const cache = new Map<string, { data: any, timestamp: number }>()
+     
+     // Durée de validité du cache par défaut (5 minutes)
+     const DEFAULT_TTL = 5 * 60 * 1000
+     
+     // Fonction pour récupérer des données avec mise en cache
+     async function fetchWithCache<T>(
+       key: string,
+       fetcher: () => Promise<T>,
+       ttl = DEFAULT_TTL
+     ): Promise<T> {
+       const now = Date.now()
+       const cached = cache.get(key)
+       
+       // Utiliser le cache si disponible et non expiré
+       if (cached && now - cached.timestamp < ttl) {
+         return cached.data as T
+       }
+       
+       // Sinon, charger les données
+       const data = await fetcher()
+       
+       // Mettre en cache
+       cache.set(key, { data, timestamp: now })
+       
+       return data
+     }
+     
+     // Fonction pour invalider une entrée du cache
+     function invalidateCache(key: string) {
+       cache.delete(key)
+     }
+     
+     // Fonction pour vider tout le cache
+     function clearCache() {
+       cache.clear()
+     }
+     
+     return {
+       fetchWithCache,
+       invalidateCache,
+       clearCache
+     }
+   }
+   
+   // Rendre le cache partagé entre les composants
+   export const useSharedDataCache = createSharedComposable(useDataCache)
+   
+   // Memoisation pour les calculs coûteux
+   export function useExpensiveCalculation<T>(fn: (...args: any[]) => T) {
+     return useMemoize(fn)
+   }
+   
+   // Utilisation
+   const { calculateComplexValue } = useExpensiveCalculation((id: string, factor: number) => {
+     // Calcul coûteux...
+     return result
+   })
+   
+   // Calcul mis en cache par arguments
+   const value1 = calculateComplexValue('abc', 1.5) // Exécute le calcul
+   const value2 = calculateComplexValue('abc', 1.5) // Récupère depuis le cache
+   const value3 = calculateComplexValue('xyz', 1.5) // Exécute à nouveau (arguments différents)
+   ```
+
+3. Virtualization pour les longues listes
+   ```vue
+   <script setup lang="ts">
+   import { ref, computed } from 'vue'
+   import { useWindowSize, useElementBounding, useScroll } from '@vueuse/core'
+   
+   const props = defineProps<{
+     items: any[]
+     itemHeight: number
+   }>()
+   
+   const containerRef = ref<HTMLElement | null>(null)
+   
+   // Obtenir les dimensions de la fenêtre et du conteneur
+   const { height: windowHeight } = useWindowSize()
+   const { height: containerHeight } = useElementBounding(containerRef)
+   
+   // Suivre le défilement
+   const { y: scrollTop } = useScroll(containerRef)
+   
+   // Calculer les index des éléments visibles
+   const visibleItemsInfo = computed(() => {
+     // Calculer les index de début et de fin
+     const startIndex = Math.max(0, Math.floor(scrollTop.value / props.itemHeight))
+     const visibleCount = Math.ceil(containerHeight.value / props.itemHeight) + 1 // +1 pour éviter les lacunes
+     const endIndex = Math.min(props.items.length - 1, startIndex + visibleCount)
+     
+     // Calculer le padding pour maintenir la taille du défilement
+     const paddingTop = startIndex * props.itemHeight
+     const paddingBottom = (props.items.length - endIndex - 1) * props.itemHeight
+     
+     return {
+       startIndex,
+       endIndex,
+       paddingTop,
+       paddingBottom
+     }
+   })
+   
+   // Éléments visibles
+   const visibleItems = computed(() => {
+     const { startIndex, endIndex } = visibleItemsInfo.value
+     return props.items.slice(startIndex, endIndex + 1)
+   })
+   </script>
+   
+   <template>
+     <div ref="containerRef" class="virtual-list-container">
+       <!-- Conteneur de la liste virtuelle -->
+       <div 
+         class="virtual-list-content"
+         :style="{
+           paddingTop: `${visibleItemsInfo.paddingTop}px`,
+           paddingBottom: `${visibleItemsInfo.paddingBottom}px`
+         }"
+       >
+         <!-- Éléments visibles uniquement -->
+         <div 
+           v-for="(item, index) in visibleItems" 
+           :key="index + visibleItemsInfo.startIndex"
+           class="virtual-list-item"
+           :style="{ height: `${itemHeight}px` }"
+         >
+           <slot :item="item" :index="index + visibleItemsInfo.startIndex" />
+         </div>
+       </div>
+     </div>
+   </template>
+   ```
+
+## Formulaires et validation
+
+1. Gestion de formulaires avec VueUse
+   ```vue
+   <script setup lang="ts">
+   import { reactive, computed } from 'vue'
+   import { 
+     useValidation,
+     useForm,
+     useFormData,
+     useDebounceFn
+   } from '@vueuse/core'
+   
+   // Définir le formulaire avec validation
+   const { form, errors, pass, validate } = useValidation({
+     email: {
+       value: '',
+       rules: [
+         { required: true, message: 'Email is required' },
+         { email: true, message: 'Invalid email format' }
+       ]
+     },
+     password: {
+       value: '',
+       rules: [
+         { required: true, message: 'Password is required' },
+         { min: 8, message: 'Password must be at least 8 characters' },
+         { 
+           validator: (val) => /[A-Z]/.test(val) && /[0-9]/.test(val),
+           message: 'Password must contain at least one uppercase letter and one number'
+         }
+       ]
+     },
+     rememberMe: {
+       value: false
+     }
+   })
+   
+   // Vérifier la force du mot de passe
+   const passwordStrength = computed(() => {
+     const password = form.password
+     if (!password) return 0
+     
+     let strength = 0
+     
+     // Longueur
+     if (password.length >= 8) strength += 1
+     if (password.length >= 12) strength += 1
+     
+     // Complexité
+     if (/[A-Z]/.test(password)) strength += 1
+     if (/[0-9]/.test(password)) strength += 1
+     if (/[^A-Za-z0-9]/.test(password)) strength += 1
+     
+     return Math.min(5, strength)
+   })
+   
+   // Validation en temps réel avec debounce
+   const debouncedValidate = useDebounceFn(validate, 300)
+   
+   // Soumission du formulaire
+   async function handleSubmit() {
+     // Valider avant la soumission
+     const isValid = await validate()
+     
+     if (!isValid) {
+       return
+     }
+     
+     try {
+       // Soumettre le formulaire
+       const result = await api.login(form.email, form.password, form.rememberMe)
+       
+       if (result.success) {
+         // Rediriger ou afficher un message de succès
+       }
+     } catch (error) {
+       // Gérer l'erreur
+     }
+   }
+   </script>
+   
+   <template>
+     <form @submit.prevent="handleSubmit" class="login-form">
+       <div class="form-group">
+         <label for="email">Email</label>
+         <input
+           id="email"
+           v-model="form.email"
+           type="email"
+           @input="debouncedValidate('email')"
+           :class="{ 'is-invalid': errors.email }"
+         />
+         <div v-if="errors.email" class="error-message">
+           {{ errors.email }}
+         </div>
+       </div>
+       
+       <div class="form-group">
+         <label for="password">Password</label>
+         <input
+           id="password"
+           v-model="form.password"
+           type="password"
+           @input="debouncedValidate('password')"
+           :class="{ 'is-invalid': errors.password }"
+         />
+         
+         <!-- Indicateur de force du mot de passe -->
+         <div class="password-strength">
+           <div 
+             v-for="n in 5" 
+             :key="n"
+             class="strength-bar"
+             :class="{ active: passwordStrength >= n }"
+           ></div>
+           <span class="strength-text">
+             {{ ['Very Weak', 'Weak', 'Fair', 'Good', 'Strong', 'Very Strong'][passwordStrength] }}
+           </span>
+         </div>
+         
+         <div v-if="errors.password" class="error-message">
+           {{ errors.password }}
+         </div>
+       </div>
+       
+       <div class="form-check">
+         <input
+           id="remember-me"
+           v-model="form.rememberMe"
+           type="checkbox"
+         />
+         <label for="remember-me">Remember me</label>
+       </div>
+       
+       <button
+         type="submit"
+         class="submit-button"
+         :disabled="!pass"
+       >
+         Login
+       </button>
+     </form>
+   </template>
+   ```
+
+2. Upload de fichiers et prévisualisation
+   ```vue
+   <script setup lang="ts">
+   import { ref, computed } from 'vue'
+   import { 
+     useDropZone, 
+     useFileDialog,
+     useObjectUrl,
+     useBase64
+   } from '@vueuse/core'
+   
+   const dropZoneRef = ref<HTMLElement | null>(null)
+   const files = ref<File[]>([])
+   const isUploading = ref(false)
+   
+   // Configuration de la zone de drop
+   const { isOverDropZone } = useDropZone(dropZoneRef, (files) => {
+     handleFiles(Array.from(files))
+   })
+   
+   // Dialogue de sélection de fichier
+   const { open, onChange } = useFileDialog({
+     accept: 'image/*',
+     multiple: true
+   })
+   
+   // Se déclenche lorsque l'utilisateur sélectionne des fichiers
+   onChange((fileList) => {
+     handleFiles(Array.from(fileList))
+   })
+   
+   // Traiter les fichiers sélectionnés
+   function handleFiles(newFiles: File[]) {
+     // Filtrer les doublons et ajouter les nouveaux fichiers
+     const uniqueNewFiles = newFiles.filter(newFile => 
+       !files.value.some(existingFile => 
+         existingFile.name === newFile.name && 
+         existingFile.size === newFile.size
+       )
+     )
+     
+     files.value = [...files.value, ...uniqueNewFiles]
+   }
+   
+   // Supprimer un fichier
+   function removeFile(index: number) {
+     files.value.splice(index, 1)
+   }
+   
+   // Vérifier la taille des fichiers
+   const totalSize = computed(() => 
+     files.value.reduce((sum, file) => sum + file.size, 0)
+   )
+   
+   const isFileSizeValid = computed(() => totalSize.value <= 10 * 1024 * 1024) // 10 MB max
+   
+   // Formater la taille de fichier
+   function formatFileSize(bytes: number) {
+     if (bytes < 1024) return `${bytes} B`
+     if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`
+     return `${(bytes / (1024 * 1024)).toFixed(1)} MB`
+   }
+   
+   // Créer des URL pour la prévisualisation
+   function getPreviewUrl(file: File) {
+     return useObjectUrl(file)
+   }
+   
+   // Soumettre les fichiers
+   async function uploadFiles() {
+     if (files.value.length === 0 || !isFileSizeValid.value) return
+     
+     isUploading.value = true
+     
+     try {
+       const formData = new FormData()
+       files.value.forEach(file => {
+         formData.append('files', file)
+       })
+       
+       await api.uploadFiles(formData)
+       
+       // Réinitialiser après le succès
+       files.value = []
+     } catch (error) {
+       // Gérer l'erreur
+     } finally {
+       isUploading.value = false
+     }
+   }
+   </script>
+   
+   <template>
+     <div class="file-upload">
+       <!-- Zone de drop -->
+       <div 
+         ref="dropZoneRef"
+         class="drop-zone"
+         :class="{ 'is-dragover': isOverDropZone }"
+         @click="open"
+       >
+         <div class="drop-zone-content">
+           <UploadIcon />
+           <p>Drag files here or click to browse</p>
+           <p class="drop-zone-hint">Max size: 10 MB</p>
+         </div>
+       </div>
+       
+       <!-- Liste des fichiers -->
+       <div v-if="files.length > 0" class="file-list">
+         <div 
+           v-for="(file, index) in files" 
+           :key="index"
+           class="file-item"
+         >
+           <!-- Prévisualisation pour les images -->
+           <img 
+             v-if="file.type.startsWith('image/')"
+             :src="getPreviewUrl(file)"
+             class="file-preview"
+             alt="Preview"
+           />
+           
+           <!-- Icône pour les autres types de fichiers -->
+           <FileIcon v-else />
+           
+           <div class="file-info">
+             <span class="file-name">{{ file.name }}</span>
+             <span class="file-size">{{ formatFileSize(file.size) }}</span>
+           </div>
+           
+           <button
+             @click.stop="removeFile(index)"
+             class="remove-file"
+             title="Remove file"
+           >
+             <CloseIcon />
+           </button>
+         </div>
+       </div>
+       
+       <!-- Total et contrôles -->
+       <div v-if="files.length > 0" class="upload-controls">
+         <div class="upload-stats">
+           <span>{{ files.length }} file(s)</span>
+           <span>Total: {{ formatFileSize(totalSize) }}</span>
+           
+           <span v-if="!isFileSizeValid" class="error-message">
+             File size exceeds limit (10 MB)
+           </span>
+         </div>
+         
+         <button
+           @click="uploadFiles"
+           class="upload-button"
+           :disabled="files.length === 0 || !isFileSizeValid || isUploading"
+         >
+           <template v-if="isUploading">
+             <LoadingSpinner />
+             Uploading...
+           </template>
+           <template v-else>
+             Upload
+           </template>
+         </button>
+       </div>
+     </div>
+   </template>
+   ```

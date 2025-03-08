@@ -1,0 +1,447 @@
+---
+description: Standards de code et formatage 
+globs: *.ts, *.vue, *.js
+alwaysApply: false
+---
+# Standards de code et formatage
+
+## Général
+
+1. Utiliser des espaces (2) au lieu de tabulations
+2. Limiter les lignes à 100 caractères maximum
+3. Ajouter des lignes vides entre les sections logiques du code
+4. Utiliser des commentaires significatifs qui expliquent "pourquoi" et non "quoi"
+5. Toujours ajouter des types TypeScript explicites pour les paramètres et retours de fonction
+6. Utiliser des fonctions pures autant que possible
+
+## TypeScript
+
+1. Utiliser la syntaxe de fonction standard pour les fonctions pures
+   ```ts
+   // ✅ Bon
+   export function calculateTotal(items: Item[]): number {
+     return items.reduce((sum, item) => sum + item.price, 0)
+   }
+   
+   // ❌ Éviter
+   export const calculateTotal = (items: Item[]): number => {
+     return items.reduce((sum, item) => sum + item.price, 0)
+   }
+   ```
+
+2. Utiliser les interfaces pour les objets, avec des commentaires descriptifs
+   ```ts
+   interface User {
+     /** Identifiant unique de l'utilisateur */
+     id: string
+     /** Nom complet de l'utilisateur */
+     name: string
+     /** Adresse email vérifiée de l'utilisateur */
+     email: string
+     /** Date de création du compte, au format ISO */
+     createdAt: string
+   }
+   ```
+
+3. Utiliser des types discriminés pour les unions
+   ```ts
+   type LoadingState = 
+     | { status: 'idle' }
+     | { status: 'loading' }
+     | { status: 'success', data: User[] }
+     | { status: 'error', error: string }
+   ```
+
+4. Utiliser des maps typées au lieu d'enums
+   ```ts
+   // ❌ Éviter
+   enum UserRole {
+     ADMIN = 'admin',
+     EDITOR = 'editor',
+     VIEWER = 'viewer'
+   }
+   
+   // ✅ Bon
+   const UserRole = {
+     ADMIN: 'admin',
+     EDITOR: 'editor',
+     VIEWER: 'viewer'
+   } as const
+   
+   type UserRole = typeof UserRole[keyof typeof UserRole]
+   ```
+
+5. Typer explicitement les hooks réactifs
+   ```ts
+   const count = ref<number>(0)
+   const user = ref<User | null>(null)
+   ```
+
+## Composition API et Vue.js 3
+
+1. Utiliser script setup avec TypeScript
+   ```vue
+   <script setup lang="ts">
+   import { ref, computed, onMounted } from 'vue'
+   
+   // Code du composant
+   </script>
+   ```
+
+2. Définir les props avec une interface TypeScript
+   ```vue
+   <script setup lang="ts">
+   interface Props {
+     user: User
+     isEditable?: boolean
+   }
+   
+   const props = withDefaults(defineProps<Props>(), {
+     isEditable: false
+   })
+   </script>
+   ```
+
+3. Émettre des événements typés
+   ```vue
+   <script setup lang="ts">
+   const emit = defineEmits<{
+     (e: 'update', value: string): void
+     (e: 'submit', data: FormData): void
+   }>()
+   </script>
+   ```
+
+4. Organiser le code dans un ordre logique
+   ```vue
+   <script setup lang="ts">
+   // 1. Imports
+   import { ref, computed, onMounted } from 'vue'
+   import { useUserStore } from '@/stores/user'
+   
+   // 2. Props
+   interface Props {
+     userId: string
+   }
+   const props = defineProps<Props>()
+   
+   // 3. Emits
+   const emit = defineEmits<{
+     (e: 'update', user: User): void
+   }>()
+   
+   // 4. Composables et stores
+   const userStore = useUserStore()
+   
+   // 5. State local
+   const isLoading = ref(false)
+   const error = ref<string | null>(null)
+   
+   // 6. Computed properties
+   const userName = computed(() => userStore.user?.name || 'Utilisateur inconnu')
+   
+   // 7. Méthodes
+   function handleUpdate() {
+     // ...
+   }
+   
+   // 8. Lifecycle hooks
+   onMounted(async () => {
+     try {
+       isLoading.value = true
+       await userStore.fetchUser(props.userId)
+     } catch (err) {
+       error.value = 'Erreur lors du chargement de l\'utilisateur'
+     } finally {
+       isLoading.value = false
+     }
+   })
+   </script>
+   ```
+
+## Pinia Stores
+
+1. Utiliser la syntaxe setup pour les stores
+   ```ts
+   // stores/user.store.ts
+   import { defineStore } from 'pinia'
+   import { ref, computed } from 'vue'
+   import type { User } from '@/types'
+   
+   export const useUserStore = defineStore('user', () => {
+     // State
+     const user = ref<User | null>(null)
+     const isLoading = ref(false)
+     const error = ref<string | null>(null)
+     
+     // Getters
+     const isLoggedIn = computed(() => !!user.value)
+     const userName = computed(() => user.value?.name || 'Invité')
+     
+     // Actions
+     async function fetchUser(id: string) {
+       isLoading.value = true
+       error.value = null
+       
+       try {
+         // Appel API
+         user.value = await api.getUser(id)
+       } catch (err) {
+         error.value = 'Erreur lors du chargement de l\'utilisateur'
+         throw err
+       } finally {
+         isLoading.value = false
+       }
+     }
+     
+     function logout() {
+       user.value = null
+     }
+     
+     return {
+       // State exposé
+       user,
+       isLoading,
+       error,
+       
+       // Getters
+       isLoggedIn,
+       userName,
+       
+       // Actions
+       fetchUser,
+       logout
+     }
+   })
+   ```
+
+2. Utiliser storeToRefs pour la déstructuration
+   ```ts
+   import { storeToRefs } from 'pinia'
+   import { useUserStore } from '@/stores/user'
+   
+   export default {
+     setup() {
+       const userStore = useUserStore()
+       // Extraire uniquement les refs pour préserver la réactivité
+       const { user, isLoading, error } = storeToRefs(userStore)
+       // Les méthodes peuvent être déstructurées directement
+       const { fetchUser, logout } = userStore
+       
+       return {
+         user,
+         isLoading,
+         fetchUser,
+         logout
+       }
+     }
+   }
+   ```
+
+## Tailwind CSS
+
+1. Regrouper les classes Tailwind par catégorie
+   ```vue
+   <template>
+     <div
+       class="
+         /* Layout */
+         flex flex-col
+         /* Spacing */
+         p-4 gap-2
+         /* Appearence */
+         bg-white rounded-lg shadow-md
+         /* Responsive */
+         md:flex-row md:gap-4
+       "
+     >
+       <!-- Contenu -->
+     </div>
+   </template>
+   ```
+
+2. Utiliser la notation slash pour l'opacité
+   ```vue
+   <!-- ❌ Éviter -->
+   <div class="bg-blue-500 bg-opacity-50">...</div>
+   
+   <!-- ✅ Bon -->
+   <div class="bg-blue-500/50">...</div>
+   ```
+
+3. Utiliser des classes conditionnelles de manière lisible
+   ```vue
+   <button
+     :class="[
+       'px-4 py-2 rounded-md',
+       isActive 
+         ? 'bg-blue-500 text-white' 
+         : 'bg-gray-200 text-gray-700',
+       isDisabled && 'opacity-50 cursor-not-allowed'
+     ]"
+   >
+     {{ buttonText }}
+   </button>
+   ```
+
+## AdonisJS Controllers
+
+1. Structurer les contrôleurs de manière consistante
+   ```ts
+   // app/controllers/http/users.controller.ts
+   import { HttpContextContract } from '@ioc:Adonis/Core/HttpContext'
+   import UserService from 'App/Services/user.service'
+   
+   export default class UsersController {
+     private userService: UserService
+     
+     constructor() {
+       this.userService = new UserService()
+     }
+     
+     public async index({ request, response }: HttpContextContract) {
+       try {
+         const page = request.input('page', 1)
+         const limit = request.input('limit', 10)
+         
+         const users = await this.userService.getUsers({ page, limit })
+         
+         return response.ok(users)
+       } catch (error) {
+         return response.internalServerError({
+           error: 'Erreur lors de la récupération des utilisateurs',
+           details: error.message
+         })
+       }
+     }
+     
+     public async show({ params, response }: HttpContextContract) {
+       try {
+         const user = await this.userService.getUserById(params.id)
+         
+         if (!user) {
+           return response.notFound({ message: 'Utilisateur non trouvé' })
+         }
+         
+         return response.ok(user)
+       } catch (error) {
+         return response.internalServerError({
+           error: 'Erreur lors de la récupération de l\'utilisateur',
+           details: error.message
+         })
+       }
+     }
+     
+     // Autres méthodes CRUD...
+   }
+   ```
+
+2. Utiliser la validation de schéma pour les entrées
+   ```ts
+   public async store({ request, response }: HttpContextContract) {
+     try {
+       // Validation du schéma
+       const userSchema = schema.create({
+         name: schema.string({ trim: true }),
+         email: schema.string({ trim: true }, [
+           rules.email(),
+           rules.unique({ table: 'users', column: 'email' })
+         ]),
+         password: schema.string({}, [
+           rules.minLength(8)
+         ])
+       })
+       
+       const data = await request.validate({ schema: userSchema })
+       
+       // Logique métier
+       const user = await this.userService.createUser(data)
+       
+       return response.created(user)
+     } catch (error) {
+       if (error.code === 'E_VALIDATION_FAILURE') {
+         return response.unprocessableEntity(error.messages)
+       }
+       
+       return response.internalServerError({
+         error: 'Erreur lors de la création de l\'utilisateur',
+         details: error.message
+       })
+     }
+   }
+   ```
+
+## Prisma
+
+1. Structurer les requêtes Prisma de façon lisible
+   ```ts
+   const users = await prisma.user.findMany({
+     where: {
+       OR: [
+         { role: 'ADMIN' },
+         { role: 'EDITOR' }
+       ],
+       createdAt: {
+         gte: new Date('2023-01-01')
+       }
+     },
+     include: {
+       profile: true,
+       posts: {
+         where: {
+           published: true
+         },
+         take: 3,
+         orderBy: {
+           createdAt: 'desc'
+         }
+       }
+     },
+     orderBy: {
+       name: 'asc'
+     },
+     take: 10,
+     skip: (page - 1) * 10
+   })
+   ```
+
+2. Utiliser des transactions pour les opérations multi-tables
+   ```ts
+   const result = await prisma.$transaction(async (tx) => {
+     // 1. Créer l'utilisateur
+     const user = await tx.user.create({
+       data: {
+         name: data.name,
+         email: data.email,
+         password: hashedPassword
+       }
+     })
+     
+     // 2. Créer le profil associé
+     const profile = await tx.profile.create({
+       data: {
+         userId: user.id,
+         bio: data.bio,
+         avatar: data.avatar
+       }
+     })
+     
+     // 3. Créer les rôles par défaut
+     const userRole = await tx.userRole.create({
+       data: {
+         userId: user.id,
+         roleId: defaultRoleId
+       }
+     })
+     
+     return {
+       user,
+       profile,
+       userRole
+     }
+   })
+   ```
+Last edited 2 minutes ago
+
+
+

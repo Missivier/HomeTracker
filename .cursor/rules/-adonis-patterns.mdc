@@ -1,0 +1,1101 @@
+---
+description: Patterns et bonnes pratiques pour AdonisJS
+globs: *.ts
+alwaysApply: false
+---
+# Patterns et bonnes pratiques pour AdonisJS
+
+## Architecture générale
+
+1. Respecter la structure MVC
+   ```
+   /app
+   ├── controllers/       # Gestion des requêtes HTTP
+   ├── models/            # Modèles et relations
+   ├── services/          # Logique métier
+   ├── validators/        # Validation des requêtes
+   ├── middleware/        # Middleware
+   ├── exceptions/        # Gestion des erreurs
+   └── helpers/           # Fonctions utilitaires
+   ```
+
+2. Organiser les contrôleurs par domaine ou ressource
+   ```
+   /app/controllers
+   ├── http/
+   │   ├── auth/              # Authentification
+   │   │   ├── register.ts    # Inscription
+   │   │   ├── login.ts       # Connexion
+   │   │   └── password.ts    # Gestion mot de passe
+   │   ├── users.ts           # Gestion des utilisateurs
+   │   ├── products.ts        # Gestion des produits
+   │   └── orders.ts          # Gestion des commandes
+   └── ws/                    # Contrôleurs WebSocket
+       ├── chat.ts
+       └── notifications.ts
+   ```
+
+## Contrôleurs
+
+1. Garder les contrôleurs légers, avec la logique métier dans des services
+   ```ts
+   // ❌ Éviter
+   import { HttpContextContract } from '@ioc:Adonis/Core/HttpContext'
+   import User from 'App/Models/User'
+   
+   export default class UsersController {
+     public async index({ request, response }: HttpContextContract) {
+       const page = request.input('page', 1)
+       const limit = request.input('limit', 20)
+       
+       // Logique directement dans le contrôleur
+       const users = await User.query()
+         .preload('profile')
+         .paginate(page, limit)
+       
+       return response.ok(users)
+     }
+   }
+   
+   // ✅ Préférer
+   import { HttpContextContract } from '@ioc:Adonis/Core/HttpContext'
+   import UserService from 'App/Services/UserService'
+   
+   export default class UsersController {
+     private userService: UserService
+     
+     constructor() {
+       this.userService = new UserService()
+     }
+     
+     public async index({ request, response }: HttpContextContract) {
+       const page = request.input('page', 1)
+       const limit = request.input('limit', 20)
+       
+       const users = await this.userService.getUsers({ page, limit })
+       
+       return response.ok(users)
+     }
+   }
+   ```
+
+2. Utiliser les codes HTTP appropriés de manière cohérente
+   ```ts
+   // Création réussie
+   return response.created({ id: user.id })
+   
+   // Mise à jour réussie ou récupération
+   return response.ok(data)
+   
+   // Suppression réussie
+   return response.noContent()
+   
+   // Erreur de validation
+   return response.unprocessableEntity({ errors: validationErrors })
+   
+   // Ressource non trouvée
+   return response.notFound({ message: 'User not found' })
+   
+   // Accès non autorisé
+   return response.forbidden({ message: 'Insufficient permissions' })
+   
+   // Erreur d'authentification
+   return response.unauthorized({ message: 'Login required' })
+   
+   // Erreur serveur
+   return response.internalServerError({ error: 'Database error' })
+   ```
+
+3. Structure de contrôleur RESTful standard
+   ```ts
+   import { HttpContextContract } from '@ioc:Adonis/Core/HttpContext'
+   import ProductService from 'App/Services/ProductService'
+   import { createProductValidator, updateProductValidator } from 'App/Validators/ProductValidator'
+   
+   export default class ProductsController {
+     private productService: ProductService
+     
+     constructor() {
+       this.productService = new ProductService()
+     }
+     
+     /**
+      * Liste des produits
+      * GET /products
+      */
+     public async index({ request, response }: HttpContextContract) {
+       const page = request.input('page', 1)
+       const limit = request.input('limit', 20)
+       const category = request.input('category')
+       
+       const products = await this.productService.getProducts({
+         page,
+         limit,
+         category
+       })
+       
+       return response.ok(products)
+     }
+     
+     /**
+      * Détails d'un produit
+      * GET /products/:id
+      */
+     public async show({ params, response }: HttpContextContract) {
+       try {
+         const product = await this.productService.getProductById(params.id)
+         
+         if (!product) {
+           return response.notFound({ message: 'Product not found' })
+         }
+         
+         return response.ok(product)
+       } catch (error) {
+         return response.internalServerError({
+           error: 'Failed to retrieve product'
+         })
+       }
+     }
+     
+     /**
+      * Créer un produit
+      * POST /products
+      */
+     public async store({ request, response }: HttpContextContract) {
+       try {
+         const payload = await request.validate(createProductValidator)
+         
+         const product = await this.productService.createProduct(payload)
+         
+         return response.created(product)
+       } catch (error) {
+         if (error.code === 'E_VALIDATION_FAILURE') {
+           return response.unprocessableEntity(error.messages)
+         }
+         
+         return response.internalServerError({
+           error: 'Failed to create product'
+         })
+       }
+     }
+     
+     /**
+      * Mettre à jour un produit
+      * PUT /products/:id
+      */
+     public async update({ params, request, response }: HttpContextContract) {
+       try {
+         const payload = await request.validate(updateProductValidator)
+         
+         const product = await this.productService.updateProduct(params.id, payload)
+         
+         if (!product) {
+           return response.notFound({ message: 'Product not found' })
+         }
+         
+         return response.ok(product)
+       } catch (error) {
+         if (error.code === 'E_VALIDATION_FAILURE') {
+           return response.unprocessableEntity(error.messages)
+         }
+         
+         return response.internalServerError({
+           error: 'Failed to update product'
+         })
+       }
+     }
+     
+     /**
+      * Supprimer un produit
+      * DELETE /products/:id
+      */
+     public async destroy({ params, response }: HttpContextContract) {
+       try {
+         const deleted = await this.productService.deleteProduct(params.id)
+         
+         if (!deleted) {
+           return response.notFound({ message: 'Product not found' })
+         }
+         
+         return response.noContent()
+       } catch (error) {
+         return response.internalServerError({
+           error: 'Failed to delete product'
+         })
+       }
+     }
+   }
+   ```
+
+## Services
+
+1. Créer des services pour la logique métier réutilisable
+   ```ts
+   // app/services/user.service.ts
+   import { PrismaClient } from '@prisma/client'
+   
+   interface PaginationOptions {
+     page?: number
+     limit?: number
+   }
+   
+   export default class UserService {
+     private prisma: PrismaClient
+     
+     constructor() {
+       this.prisma = new PrismaClient()
+     }
+     
+     /**
+      * Récupérer tous les utilisateurs avec pagination
+      */
+     public async getUsers({ page = 1, limit = 20 }: PaginationOptions) {
+       const skip = (page - 1) * limit
+       
+       const [users, total] = await Promise.all([
+         this.prisma.user.findMany({
+           skip,
+           take: limit,
+           include: {
+             profile: true
+           },
+           orderBy: {
+             createdAt: 'desc'
+           }
+         }),
+         this.prisma.user.count()
+       ])
+       
+       return {
+         data: users,
+         meta: {
+           total,
+           page,
+           limit,
+           lastPage: Math.ceil(total / limit)
+         }
+       }
+     }
+     
+     /**
+      * Récupérer un utilisateur par son ID
+      */
+     public async getUserById(id: string) {
+       return this.prisma.user.findUnique({
+         where: { id },
+         include: {
+           profile: true,
+           roles: true
+         }
+       })
+     }
+     
+     /**
+      * Créer un nouvel utilisateur
+      */
+     public async createUser(data) {
+       return this.prisma.user.create({
+         data: {
+           email: data.email,
+           password: data.password, // Assurez-vous que c'est déjà haché!
+           profile: {
+             create: {
+               firstName: data.firstName,
+               lastName: data.lastName
+             }
+           }
+         },
+         include: {
+           profile: true
+         }
+       })
+     }
+     
+     /**
+      * Mettre à jour un utilisateur
+      */
+     public async updateUser(id: string, data) {
+       const updates: any = {}
+       
+       if (data.email) {
+         updates.email = data.email
+       }
+       
+       if (data.firstName || data.lastName) {
+         updates.profile = {
+           update: {
+             firstName: data.firstName,
+             lastName: data.lastName
+           }
+         }
+       }
+       
+       return this.prisma.user.update({
+         where: { id },
+         data: updates,
+         include: {
+           profile: true
+         }
+       })
+     }
+     
+     /**
+      * Supprimer un utilisateur
+      */
+     public async deleteUser(id: string) {
+       await this.prisma.user.delete({
+         where: { id }
+       })
+       
+       return true
+     }
+   }
+   ```
+
+2. Utiliser la gestion des transactions pour les opérations complexes
+   ```ts
+   // app/services/order.service.ts
+   export default class OrderService {
+     private prisma: PrismaClient
+     
+     constructor() {
+       this.prisma = new PrismaClient()
+     }
+     
+     /**
+      * Créer une commande avec ses détails
+      */
+     public async createOrder(data) {
+       return this.prisma.$transaction(async (tx) => {
+         // 1. Créer la commande
+         const order = await tx.order.create({
+           data: {
+             userId: data.userId,
+             status: 'pending',
+             shippingAddress: data.shippingAddress,
+             totalAmount: data.totalAmount
+           }
+         })
+         
+         // 2. Créer les détails de commande
+         for (const item of data.items) {
+           await tx.orderItem.create({
+             data: {
+               orderId: order.id,
+               productId: item.productId,
+               quantity: item.quantity,
+               unitPrice: item.unitPrice
+             }
+           })
+           
+           // 3. Mettre à jour le stock
+           await tx.product.update({
+             where: { id: item.productId },
+             data: {
+               stock: {
+                 decrement: item.quantity
+               }
+             }
+           })
+         }
+         
+         // 4. Créer un événement de paiement
+         await tx.paymentEvent.create({
+           data: {
+             orderId: order.id,
+             status: 'pending',
+             amount: data.totalAmount
+           }
+         })
+         
+         return order
+       })
+     }
+   }
+   ```
+
+## Validation
+
+1. Centraliser les validateurs par entité
+   ```ts
+   // app/validators/user.validator.ts
+   import { schema, rules } from '@ioc:Adonis/Core/Validator'
+
+   export const createUserValidator = {
+     schema: schema.create({
+       email: schema.string({ trim: true }, [
+         rules.email(),
+         rules.unique({ table: 'users', column: 'email' })
+       ]),
+       password: schema.string({}, [
+         rules.minLength(8),
+         rules.confirmed('passwordConfirmation')
+       ]),
+       firstName: schema.string({ trim: true }),
+       lastName: schema.string({ trim: true })
+     }),
+     messages: {
+       'email.required': 'Email is required',
+       'email.email': 'Invalid email format',
+       'email.unique': 'Email already in use',
+       'password.required': 'Password is required',
+       'password.minLength': 'Password must be at least 8 characters',
+       'firstName.required': 'First name is required',
+       'lastName.required': 'Last name is required'
+     }
+   }
+
+   export const updateUserValidator = {
+     schema: schema.create({
+       email: schema.string.optional({ trim: true }, [
+         rules.email(),
+         rules.unique({ table: 'users', column: 'email', whereNot: { id: '$params.id' } })
+       ]),
+       firstName: schema.string.optional({ trim: true }),
+       lastName: schema.string.optional({ trim: true })
+     }),
+     messages: {
+       'email.email': 'Invalid email format',
+       'email.unique': 'Email already in use'
+     }
+   }
+   ```
+
+2. Utiliser la validation avec Prisma
+   ```ts
+   // app/controllers/products.controller.ts
+   public async store({ request, response }: HttpContextContract) {
+     try {
+       // Valider la requête
+       const payload = await request.validate(createProductValidator)
+       
+       // Créer le produit
+       const product = await this.productService.createProduct(payload)
+       
+       return response.created(product)
+     } catch (error) {
+       if (error.code === 'E_VALIDATION_FAILURE') {
+         return response.unprocessableEntity(error.messages)
+       }
+       
+       return response.internalServerError({
+         error: 'Failed to create product'
+       })
+     }
+   }
+   ```
+
+## Middleware
+
+1. Créer des middleware pour la logique transversale
+   ```ts
+   // app/middleware/auth.middleware.ts
+   import { HttpContextContract } from '@ioc:Adonis/Core/HttpContext'
+   import { PrismaClient } from '@prisma/client'
+
+   export default class AuthMiddleware {
+     private prisma = new PrismaClient()
+     
+     public async handle({ request, response, auth }: HttpContextContract, next: () => Promise<void>) {
+       try {
+         // Vérifier le token
+         const token = request.header('Authorization')?.replace('Bearer ', '')
+         
+         if (!token) {
+           return response.unauthorized({ message: 'Authentication required' })
+         }
+         
+         // Valider le token et récupérer l'utilisateur
+         const decoded = await auth.verify(token)
+         const user = await this.prisma.user.findUnique({
+           where: { id: decoded.sub },
+           include: { roles: true }
+         })
+         
+         if (!user) {
+           return response.unauthorized({ message: 'Invalid token' })
+         }
+         
+         // Attacher l'utilisateur à la requête
+         request.user = user
+         
+         await next()
+       } catch (error) {
+         return response.unauthorized({ message: 'Invalid token' })
+       }
+     }
+   }
+   ```
+
+2. Organisation des middlewares composables
+   ```ts
+   // app/middleware/role.middleware.ts
+   import { HttpContextContract } from '@ioc:Adonis/Core/HttpContext'
+
+   export default class RoleMiddleware {
+     /**
+      * Middleware pour vérifier si l'utilisateur a un rôle spécifique
+      */
+     public async handle(
+       { request, response }: HttpContextContract,
+       next: () => Promise<void>,
+       allowedRoles: string[]
+     ) {
+       const user = request.user
+       
+       if (!user) {
+         return response.unauthorized({ message: 'Authentication required' })
+       }
+       
+       const hasRole = user.roles.some(role => allowedRoles.includes(role.name))
+       
+       if (!hasRole) {
+         return response.forbidden({ 
+           message: 'Insufficient permissions'
+         })
+       }
+       
+       await next()
+     }
+   }
+   
+   // Utilisation dans les routes
+   Route.group(() => {
+     // Routes accessibles uniquement aux administrateurs
+     Route.get('/dashboard', 'DashboardController.index')
+   }).middleware(['auth', 'role:admin'])
+   ```
+
+## Routes
+
+1. Organiser les routes par domaine ou module
+   ```ts
+   // start/routes/auth.ts
+   import Route from '@ioc:Adonis/Core/Route'
+
+   Route.group(() => {
+     Route.post('/register', 'Auth/RegisterController.register')
+     Route.post('/login', 'Auth/LoginController.login')
+     Route.post('/logout', 'Auth/LoginController.logout').middleware('auth')
+     Route.post('/forgot-password', 'Auth/PasswordController.forgotPassword')
+     Route.post('/reset-password', 'Auth/PasswordController.resetPassword')
+   }).prefix('/auth')
+   
+   // start/routes/users.ts
+   import Route from '@ioc:Adonis/Core/Route'
+
+   Route.group(() => {
+     Route.get('/', 'UsersController.index')
+     Route.get('/:id', 'UsersController.show')
+     Route.put('/:id', 'UsersController.update')
+     Route.delete('/:id', 'UsersController.destroy')
+   }).prefix('/users').middleware(['auth', 'role:admin'])
+   
+   // start/routes.ts
+   import Route from '@ioc:Adonis/Core/Route'
+   import './routes/auth'
+   import './routes/users'
+   // Importer d'autres modules de routes...
+
+   // Routes globales
+   Route.get('/', async () => {
+     return { hello: 'world' }
+   })
+
+   // Handle 404
+   Route.any('*', ({ response }) => {
+     return response.notFound({ message: 'Route not found' })
+   })
+   ```
+
+2. Utiliser des conventions de nommage cohérentes
+   ```ts
+   // Préfixes de routes par API version
+   Route.group(() => {
+     // Routes API v1
+   }).prefix('/api/v1')
+
+   // Ressources RESTful
+   Route.resource('products', 'ProductsController')
+     .apiOnly() // Limiter aux méthodes RESTful : index, show, store, update, destroy
+   
+   // Actions personnalisées
+   Route.post('/products/:id/publish', 'ProductsController.publish')
+   Route.post('/auth/verify-email', 'Auth/EmailController.verify')
+   ```
+
+## Gestion des erreurs
+
+1. Créer des exceptions personnalisées
+   ```ts
+   // app/exceptions/validation.exception.ts
+   import { Exception } from '@adonisjs/core/build/standalone'
+
+   export default class ValidationException extends Exception {
+     constructor(message: string, status: number = 422, code: string = 'E_VALIDATION_ERROR') {
+       super(message, status, code)
+     }
+   }
+   
+   // app/exceptions/not-found.exception.ts
+   import { Exception } from '@adonisjs/core/build/standalone'
+
+   export default class NotFoundException extends Exception {
+     constructor(resource: string) {
+       super(`${resource} not found`, 404, 'E_NOT_FOUND')
+     }
+   }
+   
+   // Utilisation
+   import NotFoundException from 'App/Exceptions/NotFoundException'
+
+   public async show({ params, response }: HttpContextContract) {
+     const user = await this.userService.getUserById(params.id)
+     
+     if (!user) {
+       throw new NotFoundException('User')
+     }
+     
+     return response.ok(user)
+   }
+   ```
+
+2. Gestionnaire d'exceptions global
+   ```ts
+   // app/exceptions/handler.ts
+   import { HttpContextContract } from '@ioc:Adonis/Core/HttpContext'
+   import { Exception } from '@adonisjs/core/build/standalone'
+   import Logger from '@ioc:Adonis/Core/Logger'
+
+   export default class ExceptionHandler {
+     public async handle(error: Exception, ctx: HttpContextContract) {
+       switch (error.code) {
+         case 'E_VALIDATION_FAILURE':
+           return ctx.response.unprocessableEntity(error.messages)
+           
+         case 'E_UNAUTHORIZED_ACCESS':
+           return ctx.response.unauthorized({ message: error.message })
+           
+         case 'E_FORBIDDEN_ACCESS':
+           return ctx.response.forbidden({ message: error.message })
+           
+         case 'E_NOT_FOUND':
+           return ctx.response.notFound({ message: error.message })
+           
+         default:
+           // Log les erreurs inattendues
+           Logger.error(`[ERROR] ${error.message}\n${error.stack}`)
+           
+           // En production, ne pas retourner les détails de l'erreur
+           const isDev = process.env.NODE_ENV === 'development'
+           
+           return ctx.response.internalServerError({
+             message: 'An error occurred while processing your request',
+             ...(isDev ? { error: error.message, stack: error.stack } : {})
+           })
+       }
+     }
+   }
+   ```
+
+## Prisma et Modèles
+
+1. Organisation du schéma Prisma
+   ```prisma
+   // prisma/schema.prisma
+   generator client {
+     provider = "prisma-client-js"
+   }
+
+   datasource db {
+     provider = "postgresql"
+     url      = env("DATABASE_URL")
+   }
+
+   model User {
+     id        String   @id @default(uuid())
+     email     String   @unique
+     password  String
+     createdAt DateTime @default(now()) @map("created_at")
+     updatedAt DateTime @updatedAt @map("updated_at")
+     
+     profile   Profile?
+     roles     UserRole[]
+     orders    Order[]
+     
+     @@map("users")
+   }
+
+   model Profile {
+     id        String   @id @default(uuid())
+     userId    String   @unique @map("user_id")
+     firstName String   @map("first_name")
+     lastName  String   @map("last_name")
+     avatar    String?
+     bio       String?
+     createdAt DateTime @default(now()) @map("created_at")
+     updatedAt DateTime @updatedAt @map("updated_at")
+     
+     user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+     
+     @@map("profiles")
+   }
+
+   model Role {
+     id          String     @id @default(uuid())
+     name        String     @unique
+     description String?
+     createdAt   DateTime   @default(now()) @map("created_at")
+     updatedAt   DateTime   @updatedAt @map("updated_at")
+     
+     users       UserRole[]
+     
+     @@map("roles")
+   }
+
+   model UserRole {
+     userId    String   @map("user_id")
+     roleId    String   @map("role_id")
+     createdAt DateTime @default(now()) @map("created_at")
+     
+     user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+     role      Role     @relation(fields: [roleId], references: [id], onDelete: Cascade)
+     
+     @@id([userId, roleId])
+     @@map("user_roles")
+   }
+   ```
+
+2. Avec Prisma, étendre les modèles si nécessaire
+   ```ts
+   // app/models/user.model.ts
+   import { PrismaClient, User as PrismaUser } from '@prisma/client'
+
+   const prisma = new PrismaClient()
+
+   export default class User {
+     /**
+      * Trouver un utilisateur par son email
+      */
+     public static async findByEmail(email: string) {
+       return prisma.user.findUnique({
+         where: { email },
+         include: {
+           profile: true,
+           roles: {
+             include: {
+               role: true
+             }
+           }
+         }
+       })
+     }
+     
+     /**
+      * Vérifier si l'utilisateur a un rôle
+      */
+     public static hasRole(user: PrismaUser & { roles?: any[] }, roleName: string): boolean {
+       if (!user.roles) return false
+       
+       return user.roles.some(userRole => 
+         userRole.role?.name === roleName || userRole.role?.id === roleName
+       )
+     }
+   }
+   ```
+
+## WebSockets
+
+1. Structure des contrôleurs WebSocket
+   ```ts
+   // app/controllers/ws/chat.controller.ts
+   import { WsContextContract } from '@ioc:Ruby184/Socket.IO/WsContext'
+   import { PrismaClient } from '@prisma/client'
+
+   export default class ChatController {
+     private prisma = new PrismaClient()
+     
+     /**
+      * Gérer la connexion au socket
+      */
+     public async onConnect({ socket, auth }: WsContextContract) {
+       // Authentifier l'utilisateur
+       const user = await auth.authenticate()
+       
+       if (!user) {
+         socket.disconnect()
+         return
+       }
+       
+       // Joindre les rooms personnelles
+       socket.join(`user:${user.id}`)
+       
+       // Récupérer et joindre les rooms de chat existantes
+       const userChats = await this.prisma.chatMember.findMany({
+         where: { userId: user.id },
+         include: { chat: true }
+       })
+       
+       userChats.forEach(membership => {
+         socket.join(`chat:${membership.chatId}`)
+       })
+       
+       // Émettre un événement de connexion
+       socket.broadcast.emit('user:online', { userId: user.id })
+     }
+     
+     /**
+      * Créer un nouveau message
+      */
+     public async onMessage({ socket, auth, data }: WsContextContract) {
+       const user = auth.user!
+       const { chatId, content } = data
+       
+       // Vérifier l'appartenance au chat
+       const membership = await this.prisma.chatMember.findUnique({
+         where: {
+           userId_chatId: {
+             userId: user.id,
+             chatId
+           }
+         }
+       })
+       
+       if (!membership) {
+         socket.emit('error', { message: 'Not a member of this chat' })
+         return
+       }
+       
+       // Créer le message
+       const message = await this.prisma.message.create({
+         data: {
+           content,
+           chatId,
+           userId: user.id
+         },
+         include: {
+           user: {
+             select: {
+               id: true,
+               email: true,
+               profile: {
+                 select: {
+                   firstName: true,
+                   lastName: true,
+                   avatar: true
+                 }
+               }
+             }
+           }
+         }
+       })
+       
+       // Émettre à tous les membres du chat
+       socket.to(`chat:${chatId}`).emit('chat:message', message)
+       
+       // Accuser réception
+       socket.emit('chat:message:sent', { messageId: message.id })
+     }
+     
+     /**
+      * Gérer le typing indicator
+      */
+     public async onTyping({ socket, auth, data }: WsContextContract) {
+       const user = auth.user!
+       const { chatId, isTyping } = data
+       
+       socket.to(`chat:${chatId}`).emit('chat:typing', {
+         userId: user.id,
+         chatId,
+         isTyping
+       })
+     }
+   }
+   ```
+
+2. Configuration des WebSockets
+   ```ts
+   // start/socket.ts
+   import Ws from '@ioc:Ruby184/Socket.IO/Server'
+
+   Ws.boot()
+
+   // Configuration du middleware d'authentification pour les sockets
+   Ws.io.use(async (socket, next) => {
+     const token = socket.handshake.auth.token
+     
+     if (!token) {
+       return next(new Error('Authentication required'))
+     }
+     
+     // Vérifier le token avec votre système d'auth
+     try {
+       const user = await verifyToken(token)
+       socket.user = user
+       next()
+     } catch (error) {
+       next(new Error('Invalid token'))
+     }
+   })
+
+   // Définir les namespaces et handlers
+   Ws.namespace('/')
+     .connectHandler('ChatController.onConnect')
+     .disconnectHandler('ChatController.onDisconnect')
+     .on('chat:message', 'ChatController.onMessage')
+     .on('chat:typing', 'ChatController.onTyping')
+   ```
+
+## Tests
+
+1. Tests unitaires pour les services
+   ```ts
+   // tests/unit/services/user.service.test.ts
+   import test from 'japa'
+   import UserService from 'App/Services/UserService'
+   import { PrismaClient } from '@prisma/client'
+   import { mockDeep, mockReset } from 'jest-mock-extended'
+
+   // Mock Prisma
+   const prisma = mockDeep<PrismaClient>()
+
+   // Injecter le mock
+   jest.mock('@prisma/client', () => ({
+     PrismaClient: jest.fn().mockImplementation(() => prisma)
+   }))
+
+   test.group('UserService', (group) => {
+     let userService: UserService
+     
+     group.beforeEach(() => {
+       mockReset(prisma)
+       userService = new UserService()
+     })
+     
+     test('getUsers returns paginated users', async (assert) => {
+       // Arrange
+       const mockUsers = [
+         { id: '1', email: 'user1@test.com' },
+         { id: '2', email: 'user2@test.com' }
+       ]
+       
+       prisma.user.findMany.mockResolvedValue(mockUsers)
+       prisma.user.count.mockResolvedValue(10)
+       
+       // Act
+       const result = await userService.getUsers({ page: 1, limit: 2 })
+       
+       // Assert
+       assert.equal(result.data, mockUsers)
+       assert.equal(result.meta.total, 10)
+       assert.equal(result.meta.page, 1)
+       assert.equal(result.meta.limit, 2)
+       assert.equal(result.meta.lastPage, 5)
+     })
+     
+     test('getUserById returns a user when found', async (assert) => {
+       // Arrange
+       const mockUser = { id: '1', email: 'user@test.com' }
+       prisma.user.findUnique.mockResolvedValue(mockUser)
+       
+       // Act
+       const result = await userService.getUserById('1')
+       
+       // Assert
+       assert.equal(result, mockUser)
+       assert.calledWith(prisma.user.findUnique, {
+         where: { id: '1' },
+         include: {
+           profile: true,
+           roles: true
+         }
+       })
+     })
+     
+     test('getUserById returns null when user not found', async (assert) => {
+       // Arrange
+       prisma.user.findUnique.mockResolvedValue(null)
+       
+       // Act
+       const result = await userService.getUserById('999')
+       
+       // Assert
+       assert.isNull(result)
+     })
+   })
+   ```
+
+2. Tests d'intégration pour les contrôleurs
+   ```ts
+   // tests/integration/users.controller.test.ts
+   import test from 'japa'
+   import supertest from 'supertest'
+   import { createServer } from 'http'
+   import { setup, teardown } from '../helpers'
+
+   const BASE_URL = `http://${process.env.HOST}:${process.env.PORT}`
+
+   test.group('UsersController', (group) => {
+     group.beforeEach(async () => {
+       await setup()
+     })
+     
+     group.afterEach(async () => {
+       await teardown()
+     })
+     
+     test('index returns paginated users', async (assert) => {
+       const { body } = await supertest(BASE_URL)
+         .get('/api/users')
+         .set('Authorization', `Bearer ${authToken}`)
+         .expect('Content-Type', /json/)
+         .expect(200)
+       
+       assert.property(body, 'data')
+       assert.property(body, 'meta')
+       assert.isArray(body.data)
+     })
+     
+     test('show returns a user', async (assert) => {
+       const { body } = await supertest(BASE_URL)
+         .get(`/api/users/${userId}`)
+         .set('Authorization', `Bearer ${authToken}`)
+         .expect('Content-Type', /json/)
+         .expect(200)
+       
+       assert.equal(body.id, userId)
+       assert.property(body, 'email')
+       assert.property(body, 'profile')
+     })
+     
+     test('show returns 404 for non-existent user', async (assert) => {
+       await supertest(BASE_URL)
+         .get('/api/users/999999')
+         .set('Authorization', `Bearer ${authToken}`)
+         .expect('Content-Type', /json/)
+         .expect(404)
+     })
+     
+     test('store creates a new user', async (assert) => {
+       const userData = {
+         email: 'newuser@test.com',
+         password: 'password123',
+         passwordConfirmation: 'password123',
+         firstName: 'New',
+         lastName: 'User'
+       }
+       
+       const { body } = await supertest(BASE_URL)
+         .post('/api/users')
+         .set('Authorization', `Bearer ${adminToken}`)
+         .send(userData)
+         .expect('Content-Type', /json/)
+         .expect(201)
+       
+       assert.equal(body.email, userData.email)
+       assert.property(body, 'id')
+       assert.property(body, 'profile')
+       assert.equal(body.profile.firstName, userData.firstName)
+     })
+   })
+   ```

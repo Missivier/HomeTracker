@@ -1,0 +1,267 @@
+---
+description: Conventions spécifiques pour Tailwind CSS v4
+globs: *.vue, *.jsx, *.tsx
+alwaysApply: false
+---
+# Conventions Tailwind CSS v4
+
+## Principes généraux
+
+1. Privilégier les classes utilitaires natives aux classes personnalisées
+2. Organiser les classes dans un ordre logique et cohérent
+3. Utiliser les nouvelles fonctionnalités de Tailwind v4 quand pertinent
+4. Éviter les styles inline et les composants stylisés
+5. Favoriser la réutilisation de patterns courants
+
+## Organisation des classes
+
+1. Regrouper les classes selon cet ordre:
+   ```
+   1. Layout (container, flex, grid, etc.)
+   2. Positionnement (static, relative, absolute, etc.)
+   3. Dimensions (width, height, etc.)
+   4. Marges et padding (m-*, p-*)
+   5. Typographie (text-*, font-*, etc.)
+   6. Arrière-plan et bordures (bg-*, border-*, etc.)
+   7. Effets (shadow-*, opacity-*, etc.)
+   8. Transitions et animations (transition-*, animate-*, etc.)
+   9. États (hover:*, focus:*, etc.)
+   10. Responsive (sm:*, md:*, lg:*, etc.)
+   ```
+
+2. Formatage recommandé pour les nombreuses classes
+   ```vue
+   <div
+     class="
+       /* Layout */
+       flex flex-col items-center justify-between
+       /* Dimensions */
+       w-full max-w-md min-h-screen
+       /* Espacement */
+       p-4 gap-6
+       /* Apparence */
+       bg-white dark:bg-gray-900 rounded-lg shadow-md
+       /* États */
+       hover:shadow-lg
+       /* Responsive */
+       sm:flex-row sm:p-6 md:p-8
+     "
+   >
+     <!-- Contenu -->
+   </div>
+   ```
+
+## Bonnes pratiques Tailwind v4
+
+1. Utiliser la notation slash pour les opacités
+   ```html
+   <!-- ❌ Éviter -->
+   <div class="bg-blue-500 bg-opacity-50 text-white text-opacity-80"></div>
+   
+   <!-- ✅ Préférer -->
+   <div class="bg-blue-500/50 text-white/80"></div>
+   ```
+
+2. Privilégier les Flexbox Gaps plutôt que les Spaces
+   ```html
+   <!-- ❌ Éviter -->
+   <div class="flex space-x-4">
+     <div>Item 1</div>
+     <div>Item 2</div>
+   </div>
+   
+   <!-- ✅ Préférer -->
+   <div class="flex gap-4">
+     <div>Item 1</div>
+     <div>Item 2</div>
+   </div>
+   ```
+
+3. Utiliser la grid auto-fit/auto-fill pour les layouts responsives
+   ```html
+   <div class="grid grid-cols-[repeat(auto-fit,minmax(250px,1fr))] gap-4">
+     <div>Item 1</div>
+     <div>Item 2</div>
+     <!-- Plus d'items -->
+   </div>
+   ```
+
+4. Préférer les unités rem aux pixels fixes
+   ```html
+   <!-- ❌ Éviter -->
+   <div class="w-[350px] h-[200px] text-[14px]"></div>
+   
+   <!-- ✅ Préférer -->
+   <div class="w-80 h-48 text-sm"></div>
+   ```
+
+5. Utiliser Container Queries pour les composants adaptatifs
+   ```html
+   <div class="@container">
+     <div class="@md:flex @md:gap-4 block">
+       <!-- Contenu qui s'adapte à la taille du conteneur parent -->
+     </div>
+   </div>
+   ```
+
+## Composants et modèles réutilisables
+
+1. Card standard
+   ```html
+   <div class="bg-white dark:bg-gray-800 rounded-lg shadow-md p-4 hover:shadow-lg transition-shadow">
+     <h3 class="text-lg font-semibold text-gray-900 dark:text-white mb-2">Titre de la carte</h3>
+     <p class="text-gray-600 dark:text-gray-300">Description de la carte.</p>
+   </div>
+   ```
+
+2. Bouton primaire
+   ```html
+   <button class="
+     px-4 py-2 
+     bg-blue-600 hover:bg-blue-700 
+     text-white font-medium
+     rounded-md 
+     shadow-sm hover:shadow
+     focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2
+     disabled:opacity-50 disabled:cursor-not-allowed
+     transition-colors
+   ">
+     Bouton primaire
+   </button>
+   ```
+
+3. Formulaire bien espacé
+   ```html
+   <form class="space-y-4">
+     <div class="space-y-2">
+       <label class="block text-sm font-medium text-gray-700 dark:text-gray-300">
+         Email
+       </label>
+       <input
+         type="email"
+         class="
+           w-full px-3 py-2
+           border border-gray-300 dark:border-gray-700
+           rounded-md
+           text-gray-900 dark:text-white
+           bg-white dark:bg-gray-900
+           focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500
+         "
+       />
+     </div>
+     
+     <!-- Plus de champs -->
+     
+     <button type="submit" class="w-full px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-md">
+       Soumettre
+     </button>
+   </form>
+   ```
+
+## Responsive Design
+
+1. Toujours adopter une approche mobile-first
+   ```html
+   <!-- ❌ Éviter -->
+   <div class="desktop:hidden">Visible uniquement sur mobile</div>
+   
+   <!-- ✅ Préférer -->
+   <div class="md:hidden">Visible uniquement sur mobile</div>
+   ```
+
+2. Utiliser les préfixes responsive de manière cohérente
+   ```html
+   <div class="
+     grid grid-cols-1 gap-4
+     sm:grid-cols-2
+     md:grid-cols-3
+     lg:grid-cols-4
+     xl:grid-cols-5
+   ">
+     <!-- Items qui s'adaptent à la taille de l'écran -->
+   </div>
+   ```
+
+3. Points de rupture recommandés
+   ```
+   sm: 640px  (Petits appareils mobiles en mode paysage)
+   md: 768px  (Tablettes)
+   lg: 1024px (Ordinateurs portables/Desktops)
+   xl: 1280px (Grands écrans)
+   2xl: 1536px (Très grands écrans)
+   ```
+
+## Dark Mode
+
+1. Toujours assurer la compatibilité avec le mode sombre
+   ```html
+   <div class="
+     bg-white dark:bg-gray-900
+     text-gray-900 dark:text-white
+     border-gray-200 dark:border-gray-700
+   ">
+     Contenu adapté aux deux modes
+   </div>
+   ```
+
+2. Utiliser des niveaux de gris cohérents
+   ```
+   Mode clair:
+   - Arrière-plan principal: bg-white
+   - Arrière-plan secondaire: bg-gray-50/bg-gray-100
+   - Bordures: border-gray-200
+   - Texte principal: text-gray-900
+   - Texte secondaire: text-gray-600
+   
+   Mode sombre:
+   - Arrière-plan principal: bg-gray-900
+   - Arrière-plan secondaire: bg-gray-800
+   - Bordures: border-gray-700
+   - Texte principal: text-white
+   - Texte secondaire: text-gray-300
+   ```
+
+## Optimisation pour la production
+
+1. Utiliser les stratégies d'optimisation de Tailwind
+   ```js
+   // tailwind.config.js
+   module.exports = {
+     content: [
+       './index.html',
+       './src/**/*.{vue,js,ts,jsx,tsx}'
+     ],
+     // Autres configurations
+   }
+   ```
+
+2. Éviter les classes dynamiques non optimisables
+   ```js
+   // ❌ Éviter
+   const dynamicClass = `text-${size}-${color}`;
+   
+   // ✅ Préférer
+   const sizeClasses = {
+     sm: 'text-sm',
+     md: 'text-base',
+     lg: 'text-lg'
+   };
+   
+   const colorClasses = {
+     primary: 'text-blue-600',
+     secondary: 'text-gray-600',
+     danger: 'text-red-600'
+   };
+   
+   const finalClass = `${sizeClasses[size]} ${colorClasses[color]}`;
+   ```
+
+3. Grouper les variants pour réduire la taille du CSS
+   ```css
+   /* ❌ Éviter */
+   .hover\:bg-blue-700:hover { background-color: #1d4ed8; }
+   .focus\:bg-blue-700:focus { background-color: #1d4ed8; }
+   
+   /* ✅ Préférer */
+   .hover\:bg-blue-700:hover, .focus\:bg-blue-700:focus { background-color: #1d4ed8; }
+   ```

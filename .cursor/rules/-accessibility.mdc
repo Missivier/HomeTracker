@@ -1,0 +1,621 @@
+---
+description: Standards et bonnes pratiques d'accessibilité
+globs: *.vue, *.html, *.ts
+alwaysApply: false
+---
+# Standards d'accessibilité (WCAG)
+
+## Principes généraux
+
+1. Suivre les standards WCAG 2.1 niveau AA minimum
+2. Tester l'accessibilité avec des outils comme Axe, Lighthouse ou WAVE
+3. Assurer la compatibilité avec les lecteurs d'écran
+4. Permettre la navigation complète au clavier
+5. Fournir des textes alternatifs pour tous les éléments non textuels
+6. Maintenir un contraste de couleur suffisant
+7. Créer une structure de document logique et sémantique
+
+## Structure HTML sémantique
+
+1. Utiliser les éléments HTML sémantiques
+   ```html
+   <!-- ❌ Éviter -->
+   <div class="header">
+     <div class="nav">...</div>
+   </div>
+   <div class="main">
+     <div class="section">...</div>
+   </div>
+   <div class="footer">...</div>
+   
+   <!-- ✅ Bon -->
+   <header>
+     <nav>...</nav>
+   </header>
+   <main>
+     <section>...</section>
+   </main>
+   <footer>...</footer>
+   ```
+
+2. Utiliser correctement les titres pour la hiérarchie
+   ```html
+   <!-- ❌ Éviter -->
+   <h1>Titre principal</h1>
+   <h3>Sous-section</h3> <!-- Saut de h2 à h3 -->
+   
+   <!-- ✅ Bon -->
+   <h1>Titre principal</h1>
+   <h2>Section</h2>
+   <h3>Sous-section</h3>
+   ```
+
+3. Utiliser des landmarks ARIA quand nécessaire
+   ```html
+   <div role="banner">...</div>
+   <div role="navigation">...</div>
+   <div role="main">...</div>
+   <div role="contentinfo">...</div>
+   ```
+
+## Navigation et formulaires accessibles
+
+1. S'assurer que tous les éléments interactifs sont accessibles au clavier
+   ```vue
+   <!-- ❌ Éviter -->
+   <div @click="handleClick" class="button">
+     Cliquez ici
+   </div>
+   
+   <!-- ✅ Bon -->
+   <button @click="handleClick" type="button">
+     Cliquez ici
+   </button>
+   ```
+
+2. Ajouter des étiquettes explicites aux champs de formulaire
+   ```vue
+   <!-- ❌ Éviter -->
+   <input type="text" v-model="name" placeholder="Entrez votre nom" />
+   
+   <!-- ✅ Bon -->
+   <div>
+     <label for="name-input">Nom</label>
+     <input 
+       id="name-input" 
+       type="text" 
+       v-model="name" 
+       aria-describedby="name-help"
+     />
+     <p id="name-help" class="text-sm text-gray-600">
+       Entrez votre nom complet
+     </p>
+   </div>
+   ```
+
+3. Gérer correctement le focus
+   ```ts
+   // Composant modal accessible
+   <script setup lang="ts">
+   import { ref, onMounted, onBeforeUnmount } from 'vue'
+   
+   const dialogRef = ref<HTMLDialogElement | null>(null)
+   const previousFocus = ref<HTMLElement | null>(null)
+   
+   function openModal() {
+     // Stocker l'élément actuellement focalisé
+     previousFocus.value = document.activeElement as HTMLElement
+     
+     // Ouvrir la modal
+     dialogRef.value?.showModal()
+     
+     // Mettre le focus sur le premier élément focalisable de la modal
+     const firstFocusable = dialogRef.value?.querySelector(
+       'button, [href], input, select, textarea, [tabindex]:not([tabindex="-1"])'
+     ) as HTMLElement
+     
+     if (firstFocusable) {
+       firstFocusable.focus()
+     }
+   }
+   
+   function closeModal() {
+     dialogRef.value?.close()
+     
+     // Restaurer le focus à l'élément précédent
+     if (previousFocus.value) {
+       previousFocus.value.focus()
+     }
+   }
+   
+   function trapFocus(event: KeyboardEvent) {
+     if (!dialogRef.value || event.key !== 'Tab') return
+     
+     const focusables = dialogRef.value.querySelectorAll(
+       'button, [href], input, select, textarea, [tabindex]:not([tabindex="-1"])'
+     )
+     
+     const firstFocusable = focusables[0] as HTMLElement
+     const lastFocusable = focusables[focusables.length - 1] as HTMLElement
+     
+     if (event.shiftKey && document.activeElement === firstFocusable) {
+       lastFocusable.focus()
+       event.preventDefault()
+     } else if (!event.shiftKey && document.activeElement === lastFocusable) {
+       firstFocusable.focus()
+       event.preventDefault()
+     }
+   }
+   
+   onMounted(() => {
+     window.addEventListener('keydown', trapFocus)
+   })
+   
+   onBeforeUnmount(() => {
+     window.removeEventListener('keydown', trapFocus)
+   })
+   </script>
+   
+   <template>
+     <button type="button" @click="openModal">Ouvrir Modal</button>
+     
+     <dialog ref="dialogRef" class="p-6 rounded-lg shadow-xl">
+       <h2 id="dialog-title" class="text-xl font-bold">Titre de la modal</h2>
+       <div class="my-4">
+         <!-- Contenu de la modal -->
+       </div>
+       <div class="flex justify-end">
+         <button type="button" @click="closeModal">Fermer</button>
+       </div>
+     </dialog>
+   </template>
+   ```
+
+4. Gérer les messages d'erreur de formulaire de façon accessible
+   ```vue
+   <template>
+     <form @submit.prevent="submitForm">
+       <div class="mb-4">
+         <label for="email" class="block font-medium">Email</label>
+         <input
+           id="email"
+           type="email"
+           v-model="email"
+           :aria-invalid="emailError ? 'true' : 'false'"
+           :aria-describedby="emailError ? 'email-error' : ''"
+           class="w-full px-4 py-2 border rounded"
+           :class="{ 'border-red-500': emailError }"
+         />
+         <div 
+           v-if="emailError" 
+           id="email-error" 
+           class="mt-1 text-red-600" 
+           role="alert"
+         >
+           {{ emailError }}
+         </div>
+       </div>
+       
+       <button 
+         type="submit" 
+         class="px-4 py-2 bg-blue-500 text-white rounded"
+         :disabled="isSubmitting"
+         aria-busy="isSubmitting"
+       >
+         {{ isSubmitting ? 'Envoi en cours...' : 'Envoyer' }}
+       </button>
+     </form>
+   </template>
+   ```
+
+## Images et médias accessibles
+
+1. Fournir des textes alternatifs pour les images
+   ```vue
+   <!-- ❌ Éviter -->
+   <img src="/images/logo.png" />
+   
+   <!-- ✅ Bon -->
+   <img 
+     src="/images/logo.png" 
+     alt="Logo de l'entreprise XYZ" 
+     width="200" 
+     height="50"
+   />
+   
+   <!-- Pour les images décoratives -->
+   <img src="/images/decoration.png" alt="" role="presentation" />
+   ```
+
+2. Fournir des sous-titres et transcriptions pour les vidéos
+   ```vue
+   <video controls>
+     <source src="/videos/presentation.mp4" type="video/mp4" />
+     <track 
+       kind="captions" 
+       src="/videos/presentation.vtt" 
+       srclang="fr" 
+       label="Français"
+     />
+     Votre navigateur ne prend pas en charge la lecture de vidéos.
+   </video>
+   ```
+
+3. Assurer que les médias ne démarrent pas automatiquement
+   ```vue
+   <!-- ❌ Éviter -->
+   <audio src="/audio/background.mp3" autoplay loop />
+   
+   <!-- ✅ Bon -->
+   <audio 
+     src="/audio/background.mp3" 
+     controls 
+     preload="metadata"
+   >
+     Votre navigateur ne prend pas en charge la lecture audio.
+   </audio>
+   ```
+
+## Couleur et contraste
+
+1. Ne pas utiliser uniquement la couleur pour transmettre une information
+   ```vue
+   <!-- ❌ Éviter -->
+   <p class="text-red-500">Ce champ est requis</p>
+   
+   <!-- ✅ Bon -->
+   <p class="text-red-500">
+     <span aria-hidden="true">⚠️ </span>
+     Ce champ est requis
+   </p>
+   ```
+
+2. Assurer un ratio de contraste suffisant (WCAG AA: 4.5:1 pour le texte normal, 3:1 pour le grand texte)
+   ```vue
+   <!-- ❌ Éviter -->
+   <p class="text-gray-400 bg-gray-200">Texte à faible contraste</p>
+   
+   <!-- ✅ Bon -->
+   <p class="text-gray-900 bg-gray-100">Texte avec un bon contraste</p>
+   ```
+
+3. Fournir un mode sombre/contraste élevé
+   ```vue
+   <script setup lang="ts">
+   import { ref, watch } from 'vue'
+   import { usePreferredDark } from '@vueuse/core'
+   
+   const isDark = ref(usePreferredDark().value)
+   
+   function toggleDarkMode() {
+     isDark.value = !isDark.value
+     localStorage.setItem('darkMode', isDark.value.toString())
+   }
+   
+   watch(isDark, (newValue) => {
+     if (newValue) {
+       document.documentElement.classList.add('dark')
+     } else {
+       document.documentElement.classList.remove('dark')
+     }
+   }, { immediate: true })
+   </script>
+   
+   <template>
+     <button 
+       @click="toggleDarkMode" 
+       type="button"
+       aria-pressed="isDark"
+       class="p-2 rounded-full"
+     >
+       <span class="sr-only">
+         {{ isDark ? 'Activer le mode clair' : 'Activer le mode sombre' }}
+       </span>
+       <svg v-if="isDark" class="w-5 h-5"><!-- Icône soleil --></svg>
+       <svg v-else class="w-5 h-5"><!-- Icône lune --></svg>
+     </button>
+   </template>
+   ```
+
+## Contenu dynamique et ARIA
+
+1. Annoncer les mises à jour dynamiques avec les live regions
+   ```vue
+   <template>
+     <div>
+       <button @click="fetchData" type="button">
+         Rafraîchir les données
+       </button>
+       
+       <div aria-live="polite" aria-atomic="true">
+         <p v-if="isLoading">Chargement en cours...</p>
+         <p v-else-if="error">{{ error }}</p>
+         <p v-else-if="data">Données mises à jour: {{ data.length }} éléments</p>
+       </div>
+       
+       <ul v-if="data && !isLoading">
+         <li v-for="item in data" :key="item.id">{{ item.name }}</li>
+       </ul>
+     </div>
+   </template>
+   ```
+
+2. Utiliser correctement les attributs ARIA pour les composants personnalisés
+   ```vue
+   <!-- Exemple d'un accordéon accessible -->
+   <script setup lang="ts">
+   import { ref } from 'vue'
+   
+   const isOpen = ref(false)
+   
+   function toggleAccordion() {
+     isOpen.value = !isOpen.value
+   }
+   </script>
+   
+   <template>
+     <div class="border rounded">
+       <h3>
+         <button 
+           @click="toggleAccordion"
+           class="w-full px-4 py-2 text-left font-medium"
+           :aria-expanded="isOpen"
+           aria-controls="accordion-content"
+         >
+           <span>Titre de l'accordéon</span>
+           <span aria-hidden="true">{{ isOpen ? '▲' : '▼' }}</span>
+         </button>
+       </h3>
+       
+       <div 
+         id="accordion-content"
+         v-show="isOpen"
+         class="p-4"
+       >
+         <!-- Contenu de l'accordéon -->
+         <p>Contenu détaillé ici...</p>
+       </div>
+     </div>
+   </template>
+   ```
+
+3. Fournir des retours d'information pour les actions
+   ```vue
+   <script setup lang="ts">
+   import { ref } from 'vue'
+   
+   const isCopied = ref(false)
+   const statusMessage = ref('')
+   
+   async function copyToClipboard() {
+     try {
+       await navigator.clipboard.writeText('Texte à copier')
+       isCopied.value = true
+       statusMessage.value = 'Texte copié dans le presse-papiers!'
+       
+       setTimeout(() => {
+         isCopied.value = false
+         statusMessage.value = ''
+       }, 3000)
+     } catch (err) {
+       statusMessage.value = 'Échec de la copie. Veuillez réessayer.'
+     }
+   }
+   </script>
+   
+   <template>
+     <div>
+       <button 
+         @click="copyToClipboard" 
+         type="button"
+         class="px-3 py-1 border rounded"
+         :aria-describedby="statusMessage ? 'copy-status' : ''"
+       >
+         <span class="mr-1">Copier</span>
+         <span v-if="isCopied" aria-hidden="true">✓</span>
+       </button>
+       
+       <div 
+         v-if="statusMessage" 
+         id="copy-status" 
+         role="status" 
+         aria-live="polite"
+         class="mt-2"
+       >
+         {{ statusMessage }}
+       </div>
+     </div>
+   </template>
+   ```
+
+## Tests d'accessibilité
+
+1. Utiliser des outils automatisés pour détecter les problèmes courants
+   ```shell
+   # package.json
+   {
+     "scripts": {
+       "a11y": "pa11y-ci ./dist/**/*.html"
+     }
+   }
+   ```
+
+2. Intégrer des tests d'accessibilité dans le pipeline CI/CD
+   ```yaml
+   # .github/workflows/accessibility.yml
+   name: Accessibility Tests
+   
+   on:
+     push:
+       branches: [main, develop]
+     pull_request:
+       branches: [main, develop]
+   
+   jobs:
+     a11y:
+       runs-on: ubuntu-latest
+       
+       steps:
+         - uses: actions/checkout@v3
+         - uses: actions/setup-node@v3
+           with:
+             node-version: '18'
+             cache: 'npm'
+         
+         - name: Install dependencies
+           run: npm ci
+         
+         - name: Build project
+           run: npm run build
+         
+         - name: Run accessibility tests
+           run: npm run a11y
+   ```
+
+3. Tester avec de vrais lecteurs d'écran
+   - NVDA (Windows)
+   - VoiceOver (macOS)
+   - TalkBack (Android)
+   - VoiceOver (iOS)
+
+4. Vérifier la navigation au clavier
+   - Tous les éléments interactifs doivent être accessibles via Tab
+   - L'ordre de tabulation doit être logique
+   - L'élément focalisé doit être clairement visible
+
+## Accessibilité dans le design système
+
+1. Créer des composants accessibles par défaut
+   ```vue
+   <!-- Composant de bouton accessible -->
+   <script setup lang="ts">
+   interface Props {
+     label: string
+     type?: 'button' | 'submit' | 'reset'
+     disabled?: boolean
+     loading?: boolean
+     icon?: string
+   }
+   
+   const props = withDefaults(defineProps<Props>(), {
+     type: 'button',
+     disabled: false,
+     loading: false
+   })
+   
+   const emit = defineEmits<{
+     (e: 'click', event: MouseEvent): void
+   }>()
+   
+   function handleClick(event: MouseEvent) {
+     if (!props.disabled && !props.loading) {
+       emit('click', event)
+     }
+   }
+   </script>
+   
+   <template>
+     <button
+       :type="type"
+       @click="handleClick"
+       :disabled="disabled || loading"
+       :aria-busy="loading"
+       class="px-4 py-2 rounded bg-blue-500 text-white"
+       :class="{
+         'opacity-50 cursor-not-allowed': disabled,
+         'animate-pulse': loading
+       }"
+     >
+       <span v-if="loading" class="mr-2" aria-hidden="true">⏳</span>
+       <span v-else-if="icon" class="mr-2" aria-hidden="true">{{ icon }}</span>
+       {{ label }}
+     </button>
+   </template>
+   ```
+
+2. Documenter les considérations d'accessibilité dans le design système
+   ```md
+   # Composant Bouton
+   
+   ## Accessibilité
+   
+   - Le bouton est navigable au clavier
+   - L'état désactivé est communiqué via l'attribut `disabled`
+   - L'état de chargement est communiqué via l'attribut `aria-busy`
+   - Les icônes sont marquées comme `aria-hidden="true"`
+   - Le texte du bouton doit être descriptif de l'action
+   
+   ## Exemple d'utilisation
+   
+   ```vue
+   <AppButton 
+     label="Envoyer le formulaire" 
+     type="submit" 
+     :loading="isSubmitting" 
+   />
+   ```
+   ```
+
+3. Inclure des variantes accessibles pour tous les composants
+   ```vue
+   <!-- Exemple d'un composant d'alerte accessible -->
+   <script setup lang="ts">
+   interface Props {
+     message: string
+     type?: 'info' | 'success' | 'warning' | 'error'
+     dismissible?: boolean
+   }
+   
+   const props = withDefaults(defineProps<Props>(), {
+     type: 'info',
+     dismissible: false
+   })
+   
+   const emit = defineEmits<{
+     (e: 'dismiss'): void
+   }>()
+   
+   const typeToRole = {
+     info: 'status',
+     success: 'status',
+     warning: 'alert',
+     error: 'alert'
+   }
+   
+   const typeToIcon = {
+     info: 'ℹ️',
+     success: '✓',
+     warning: '⚠️',
+     error: '❌'
+   }
+   </script>
+   
+   <template>
+     <div
+       :role="typeToRole[type]"
+       aria-live="polite"
+       class="p-4 rounded"
+       :class="{
+         'bg-blue-100 text-blue-800': type === 'info',
+         'bg-green-100 text-green-800': type === 'success',
+         'bg-yellow-100 text-yellow-800': type === 'warning',
+         'bg-red-100 text-red-800': type === 'error'
+       }"
+     >
+       <div class="flex">
+         <span aria-hidden="true" class="mr-2">{{ typeToIcon[type] }}</span>
+         <p>{{ message }}</p>
+         
+         <button
+           v-if="dismissible"
+           type="button"
+           class="ml-auto"
+           aria-label="Fermer l'alerte"
+           @click="emit('dismiss')"
+         >
+           <span aria-hidden="true">×</span>
+         </button>
+       </div>
+     </div>
+   </template>
+   ```

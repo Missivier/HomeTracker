@@ -1,0 +1,561 @@
+---
+description: Standards et bonnes pratiques de sécurité
+globs: *.ts, *.vue, *.js
+alwaysApply: false
+---
+# Standards de sécurité
+
+## Principes généraux
+
+1. Appliquer le principe du moindre privilège
+2. Valider toutes les entrées utilisateur, côté client ET serveur
+3. Implémenter une authentification et une autorisation robustes
+4. Protéger les données sensibles en transit et au repos
+5. Gérer correctement les erreurs sans divulguer d'informations sensibles
+6. Maintenir les dépendances à jour et surveiller les vulnérabilités
+7. Effectuer des audits de sécurité réguliers
+
+## Authentification et autorisation
+
+1. Utiliser des jetons JWT avec une durée de vie limitée
+   ```ts
+   // backend/app/services/auth.service.ts
+   import jwt from 'jsonwebtoken'
+   
+   export default class AuthService {
+     // ...
+     
+     public generateTokens(user) {
+       // Access token: courte durée de vie (15-60 minutes)
+       const accessToken = jwt.sign(
+         { sub: user.id, email: user.email, role: user.role },
+         process.env.JWT_SECRET,
+         { expiresIn: '15m' }
+       )
+       
+       // Refresh token: plus longue durée de vie (jours/semaines)
+       const refreshToken = jwt.sign(
+         { sub: user.id },
+         process.env.JWT_REFRESH_SECRET,
+         { expiresIn: '7d' }
+       )
+       
+       return { accessToken, refreshToken }
+     }
+   }
+   ```
+
+2. Stocker les tokens de manière sécurisée côté client
+   ```ts
+   // Ne jamais stocker de tokens sensibles dans le localStorage
+   // Utiliser httpOnly cookies ou une solution de stockage temporaire
+   
+   // frontend/src/services/auth.service.ts
+   import { useStorage } from '@vueuse/core'
+   
+   export const useAuthService = () => {
+     const accessToken = useStorage('accessToken', '', sessionStorage)
+     
+     // Fonction pour définir le token avec expiration
+     function setAccessToken(token) {
+       accessToken.value = token
+     }
+     
+     function clearAccessToken() {
+       accessToken.value = ''
+     }
+     
+     return {
+       accessToken,
+       setAccessToken,
+       clearAccessToken
+     }
+   }
+   ```
+
+3. Implémenter des middlewares d'autorisation basés sur les rôles
+   ```ts
+   // backend/app/middleware/auth.middleware.ts
+   export default class AuthMiddleware {
+     public async handle({ request, response, auth }, next, guards = ['api']) {
+       try {
+         await auth.authenticate()
+         
+         // Vérifier si l'utilisateur a le rôle requis
+         if (guards.includes('admin') && auth.user.role !== 'admin') {
+           return response.forbidden({ 
+             error: 'Accès non autorisé. Rôle administrateur requis.' 
+           })
+         }
+         
+         await next()
+       } catch (error) {
+         return response.unauthorized({ 
+           error: 'Non authentifié ou session expirée' 
+         })
+       }
+     }
+   }
+   
+   // backend/start/routes.ts
+   Route.group(() => {
+     // Routes pour administrateurs uniquement
+   }).middleware(['auth:admin'])
+   ```
+
+4. Utiliser une protection CSRF pour les forms
+   ```ts
+   // backend/config/shield.ts
+   export const csrf = {
+     enabled: true,
+     exceptRoutes: [],
+     enableXsrfCookie: true,
+     methods: ['POST', 'PUT', 'DELETE', 'PATCH']
+   }
+   ```
+
+## Protection contre les attaques courantes
+
+1. Protéger contre les injections (SQL, NoSQL, etc.)
+   ```ts
+   // Utiliser Prisma ORM qui protège contre les injections SQL
+   
+   // MAUVAIS: Susceptible aux injections SQL
+   const query = `SELECT * FROM users WHERE email = '${userInput}'`
+   
+   // BON: Utilisation de Prisma avec paramètres typés
+   const user = await prisma.user.findUnique({
+     where: {
+       email: userInput
+     }
+   })
+   ```
+
+2. Prévenir les attaques XSS
+   ```vue
+   <!-- Échappement automatique avec Vue -->
+   <div>{{ userProvidedContent }}</div>
+   
+   <!-- Pour le HTML brut, utiliser v-html avec prudence et désinfection -->
+   <script setup>
+   import DOMPurify from 'dompurify'
+   
+   const sanitizedHtml = computed(() => 
+     DOMPurify.sanitize(props.userHtmlContent)
+   )
+   </script>
+   
+   <template>
+     <div v-html="sanitizedHtml"></div>
+   </template>
+   ```
+
+3. Protection contre les attaques de clickjacking
+   ```ts
+   // backend/config/shield.ts
+   export const xFrame = {
+     enabled: true,
+     action: 'SAMEORIGIN'
+   }
+   ```
+
+4. Protection contre le MIME sniffing
+   ```ts
+   // backend/start/kernel.ts
+   Server.middleware.register([
+     () => import('@ioc:Adonis/Core/BodyParser'),
+     () => import('@ioc:Adonis/Addons/Shield')
+   ])
+   ```
+
+5. Installer des en-têtes de sécurité
+   ```ts
+   // backend/app/middleware/security-headers.middleware.ts
+   export default class SecurityHeadersMiddleware {
+     public async handle({ response }, next) {
+       response.header('X-Content-Type-Options', 'nosniff')
+       response.header('X-XSS-Protection', '1; mode=block')
+       response.header('X-Frame-Options', 'SAMEORIGIN')
+       response.header('Referrer-Policy', 'strict-origin-when-cross-origin')
+       response.header(
+         'Content-Security-Policy', 
+         "default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data:;"
+       )
+       
+       await next()
+     }
+   }
+   ```
+
+## Validation des données
+
+1. Valider toutes les entrées côté serveur
+   ```ts
+   // backend/app/validators/user.validator.ts
+   import { schema, rules } from '@ioc:Adonis/Core/Validator'
+   
+   export const createUserValidator = {
+     schema: schema.create({
+       name: schema.string({ trim: true }),
+       email: schema.string({ trim: true }, [
+         rules.email(),
+         rules.unique({ table: 'users', column: 'email' })
+       ]),
+       password: schema.string({}, [
+         rules.minLength(8),
+         rules.confirmed('passwordConfirmation'),
+         rules.regex(/^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)/)
+       ])
+     }),
+     messages: {
+       'name.required': 'Le nom est requis',
+       'email.required': 'L\'email est requis',
+       'email.email': 'L\'email doit être valide',
+       'email.unique': 'Cet email est déjà utilisé',
+       'password.required': 'Le mot de passe est requis',
+       'password.minLength': 'Le mot de passe doit contenir au moins 8 caractères',
+       'password.regex': 'Le mot de passe doit contenir des majuscules, minuscules et chiffres'
+     }
+   }
+   ```
+
+2. Valider également côté client pour une meilleure UX
+   ```ts
+   // frontend/src/utils/validators.ts
+   export const emailValidator = (value: string) => {
+     const regex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
+     return regex.test(value) || 'Veuillez entrer un email valide'
+   }
+   
+   export const passwordValidator = (value: string) => {
+     if (!value) return 'Le mot de passe est requis'
+     if (value.length < 8) return 'Le mot de passe doit contenir au moins 8 caractères'
+     if (!/[A-Z]/.test(value)) return 'Le mot de passe doit contenir au moins une majuscule'
+     if (!/[a-z]/.test(value)) return 'Le mot de passe doit contenir au moins une minuscule'
+     if (!/[0-9]/.test(value)) return 'Le mot de passe doit contenir au moins un chiffre'
+     return true
+   }
+   ```
+
+## Sécurité des données
+
+1. Chiffrer les données sensibles
+   ```ts
+   // backend/app/services/encryption.service.ts
+   import { createCipheriv, createDecipheriv, randomBytes } from 'crypto'
+   
+   export default class EncryptionService {
+     private algorithm = 'aes-256-cbc'
+     private key = Buffer.from(process.env.ENCRYPTION_KEY, 'hex')
+     
+     public encrypt(text: string): { iv: string, encryptedData: string } {
+       const iv = randomBytes(16)
+       const cipher = createCipheriv(this.algorithm, this.key, iv)
+       
+       let encrypted = cipher.update(text, 'utf8', 'hex')
+       encrypted += cipher.final('hex')
+       
+       return {
+         iv: iv.toString('hex'),
+         encryptedData: encrypted
+       }
+     }
+     
+     public decrypt(encryptedData: string, iv: string): string {
+       const decipher = createDecipheriv(
+         this.algorithm, 
+         this.key, 
+         Buffer.from(iv, 'hex')
+       )
+       
+       let decrypted = decipher.update(encryptedData, 'hex', 'utf8')
+       decrypted += decipher.final('utf8')
+       
+       return decrypted
+     }
+   }
+   ```
+
+2. Hacher les mots de passe correctement
+   ```ts
+   // backend/app/services/hash.service.ts
+   import { hash, verify } from '@phc/argon2'
+   
+   export default class HashService {
+     public async makeHash(password: string): Promise<string> {
+       return await hash(password)
+     }
+     
+     public async verifyHash(password: string, hashedPassword: string): Promise<boolean> {
+       return await verify(hashedPassword, password)
+     }
+   }
+   ```
+
+3. Implémenter une protection contre les attaques par force brute
+   ```ts
+   // backend/app/middleware/rate-limiter.middleware.ts
+   import { RateLimiter } from '@adonisjs/rate-limiter/build/services'
+   
+   export default class RateLimiterMiddleware {
+     private limiter: RateLimiter
+     
+     constructor() {
+       this.limiter = new RateLimiter({
+         driver: 'redis',
+         redisConnection: 'local',
+         duration: 60, // secondes
+         requests: 5,
+         blockDuration: 300 // 5 minutes de blocage
+       })
+     }
+     
+     public async handle({ request, response }, next, keys = []) {
+       try {
+         // Utiliser l'IP + d'autres clés comme l'email pour le login
+         const key = [request.ip(), ...keys].join(':')
+         await this.limiter.consume(key)
+         await next()
+       } catch (error) {
+         return response.tooManyRequests({
+           error: 'Trop de tentatives. Veuillez réessayer plus tard.',
+           retryAfter: error.msBeforeNext / 1000
+         })
+       }
+     }
+   }
+   
+   // Utilisation dans les routes
+   Route.post('/api/auth/login', 'AuthController.login')
+     .middleware(['rateLimiter:login'])
+   ```
+
+## Logs et monitoring de sécurité
+
+1. Implémenter des logs de sécurité
+   ```ts
+   // backend/app/services/log.service.ts
+   import Logger from '@ioc:Adonis/Core/Logger'
+   
+   export default class LogService {
+     public securityLog(event: string, data: any) {
+       Logger.info(`SECURITY: ${event}`, {
+         timestamp: new Date().toISOString(),
+         ip: data.ip,
+         userId: data.userId,
+         action: data.action,
+         resource: data.resource,
+         status: data.status
+       })
+     }
+     
+     public auditLog(event: string, data: any) {
+       Logger.info(`AUDIT: ${event}`, {
+         timestamp: new Date().toISOString(),
+         userId: data.userId,
+         action: data.action,
+         resource: data.resource,
+         changes: data.changes,
+         status: data.status
+       })
+     }
+   }
+   
+   // Utilisation
+   logService.securityLog('LOGIN_ATTEMPT', {
+     ip: request.ip(),
+     userId: user?.id || null,
+     action: 'LOGIN',
+     status: success ? 'SUCCESS' : 'FAILURE'
+   })
+   ```
+
+2. Configurer des alertes pour les activités suspectes
+   ```ts
+   // Implémenter un service de détection d'anomalies
+   // backend/app/services/security-monitor.service.ts
+   export default class SecurityMonitorService {
+     public async checkForAnomalies(activity) {
+       // Vérifier les connexions depuis des emplacements inhabituels
+       if (await this.isUnusualLocation(activity.ip, activity.userId)) {
+         await this.triggerAlert('UNUSUAL_LOCATION', activity)
+       }
+       
+       // Vérifier les tentatives d'accès aux ressources restreintes
+       if (activity.status === 'FORBIDDEN') {
+         await this.triggerAlert('FORBIDDEN_ACCESS', activity)
+       }
+       
+       // Vérifier les connexions multiples rapides
+       if (await this.isRapidSequentialLogin(activity.userId)) {
+         await this.triggerAlert('RAPID_LOGIN', activity)
+       }
+     }
+     
+     private async triggerAlert(type, data) {
+       // Envoyer des alertes via email, SMS, webhook, etc.
+     }
+     
+     // Autres méthodes de détection...
+   }
+   ```
+
+## Configuration et déploiement sécurisés
+
+1. Utiliser des variables d'environnement pour les secrets
+   ```
+   # .env.example
+   NODE_ENV=development
+   APP_KEY=
+   DB_CONNECTION=postgres
+   DB_HOST=localhost
+   DB_PORT=5432
+   DB_USER=user
+   DB_PASSWORD=
+   DB_NAME=app
+   
+   # Ne jamais inclure les valeurs réelles dans le code source
+   ```
+
+2. Configurer des en-têtes de sécurité dans la configuration du serveur
+   ```nginx
+   # nginx.conf
+   server {
+     listen 80;
+     server_name example.com;
+     
+     # Rediriger HTTP vers HTTPS
+     return 301 https://$host$request_uri;
+   }
+   
+   server {
+     listen 443 ssl http2;
+     server_name example.com;
+     
+     # Configuration SSL
+     ssl_certificate /path/to/cert.pem;
+     ssl_certificate_key /path/to/key.pem;
+     ssl_protocols TLSv1.2 TLSv1.3;
+     ssl_prefer_server_ciphers on;
+     ssl_ciphers 'ECDHE-ECDSA-AES256-GCM-SHA384:ECDHE-RSA-AES256-GCM-SHA384';
+     
+     # HSTS
+     add_header Strict-Transport-Security "max-age=31536000; includeSubDomains; preload" always;
+     
+     # Autres en-têtes de sécurité
+     add_header X-Content-Type-Options "nosniff" always;
+     add_header X-Frame-Options "SAMEORIGIN" always;
+     add_header X-XSS-Protection "1; mode=block" always;
+     add_header Referrer-Policy "strict-origin-when-cross-origin" always;
+     
+     # ...
+   }
+   ```
+
+3. Scanner régulièrement les dépendances pour les vulnérabilités
+   ```shell
+   # package.json
+   {
+     "scripts": {
+       "audit": "npm audit",
+       "audit:fix": "npm audit fix"
+     }
+   }
+   ```
+
+4. Configurer des listes blanches pour CORS
+   ```ts
+   // backend/config/cors.ts
+   export default {
+     enabled: true,
+     origin: ['https://yourfrontend.com'],
+     methods: ['GET', 'POST', 'PUT', 'DELETE', 'PATCH'],
+     headers: true,
+     exposeHeaders: [],
+     credentials: true,
+     maxAge: 90
+   }
+   ```
+
+## Sécurité du frontend
+
+1. Protéger contre le stockage d'informations sensibles
+   ```ts
+   // frontend/src/stores/auth.store.ts
+   import { defineStore } from 'pinia'
+   import { ref, computed } from 'vue'
+   
+   export const useAuthStore = defineStore('auth', () => {
+     // Ne jamais stocker les données sensibles en clair
+     const token = ref('')
+     const user = ref(null)
+     
+     // Exposer uniquement les informations nécessaires
+     const isAuthenticated = computed(() => !!token.value)
+     const userRole = computed(() => user.value?.role || 'guest')
+     const userDisplayName = computed(() => user.value?.name || 'Guest')
+     
+     // Ne pas stocker de données sensibles dans le state persistent
+     function setUser(userData) {
+       // Stocker uniquement les informations non sensibles
+       user.value = {
+         id: userData.id,
+         name: userData.name,
+         email: userData.email,
+         role: userData.role
+       }
+     }
+     
+     return {
+       token,
+       user,
+       isAuthenticated,
+       userRole,
+       userDisplayName,
+       setUser
+     }
+   })
+   ```
+
+2. Nettoyer les données lors de la déconnexion
+   ```ts
+   // frontend/src/services/auth.service.ts
+   function logout() {
+     // Supprimer les tokens et données utilisateur
+     sessionStorage.removeItem('accessToken')
+     localStorage.removeItem('refreshToken')
+     
+     // Réinitialiser le store
+     const authStore = useAuthStore()
+     authStore.$reset()
+     
+     // Rediriger vers la page de connexion
+     router.push('/login')
+   }
+   ```
+
+3. Utiliser des routes protégées avec Vue Router
+   ```ts
+   // frontend/src/router/guards.ts
+   import { useAuthStore } from '@/stores/auth'
+   
+   export function setupRouteGuards(router) {
+     router.beforeEach((to, from, next) => {
+       const authStore = useAuthStore()
+       
+       // Vérifier si la route nécessite une authentification
+       if (to.meta.requiresAuth && !authStore.isAuthenticated) {
+         // Rediriger vers la page de connexion
+         return next({ name: 'login', query: { redirect: to.fullPath } })
+       }
+       
+       // Vérifier les permissions basées sur les rôles
+       if (to.meta.requiresRole && !authStore.hasRole(to.meta.requiresRole)) {
+         // Rediriger vers la page d'accès refusé
+         return next({ name: 'forbidden' })
+       }
+       
+       next()
+     })
+   }
+   ```

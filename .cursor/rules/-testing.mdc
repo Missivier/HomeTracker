@@ -1,0 +1,456 @@
+---
+description: Standards et bonnes pratiques pour les tests
+globs: *.spec.ts, *.test.ts, *.cy.ts
+alwaysApply: false
+---
+# Standards de tests
+
+## Principes généraux
+
+1. Viser une couverture de code d'au moins 80% pour le code critique
+2. Écrire des tests avant ou pendant le développement, pas après
+3. Organiser les tests selon la même structure que le code source
+4. Nommer les tests de manière descriptive (décrire le comportement attendu)
+5. Suivre le pattern AAA (Arrange, Act, Assert)
+6. Maintenir l'indépendance des tests (pas d'interdépendances)
+7. S'assurer que les tests sont reproductibles et déterministes
+
+## Tests unitaires (Vitest)
+
+1. Utiliser Vitest comme framework de test (compatibilité Vite)
+   ```ts
+   import { describe, it, expect, beforeEach } from 'vitest'
+   import { calculateTotal } from './utils'
+   
+   describe('calculateTotal', () => {
+     it('should return 0 for empty array', () => {
+       expect(calculateTotal([])).toBe(0)
+     })
+     
+     it('should sum all prices correctly', () => {
+       const items = [
+         { id: 1, price: 10 },
+         { id: 2, price: 20 },
+         { id: 3, price: 30 }
+       ]
+       expect(calculateTotal(items)).toBe(60)
+     })
+   })
+   ```
+
+2. Utiliser des suites de tests descriptives avec des portées bien définies
+   ```ts
+   describe('UserService', () => {
+     describe('updateUser', () => {
+       it('should update user details correctly', () => {
+         // Test
+       })
+       
+       it('should throw an error if user not found', () => {
+         // Test
+       })
+     })
+   })
+   ```
+
+3. Utiliser des mocks pour isoler les unités de test
+   ```ts
+   import { vi } from 'vitest'
+   
+   // Mock d'un module
+   vi.mock('@/api', () => ({
+     getUser: vi.fn().mockResolvedValue({ id: 1, name: 'Test User' })
+   }))
+   
+   // Mock d'une fonction
+   const fetchMock = vi.fn().mockResolvedValue({ json: () => ({}) })
+   global.fetch = fetchMock
+   ```
+
+4. Tester les cas d'erreur, pas seulement les cas de succès
+   ```ts
+   it('should handle API errors gracefully', async () => {
+     apiMock.getUser.mockRejectedValueOnce(new Error('Network error'))
+     
+     await expect(userService.getUser(1)).rejects.toThrow('Network error')
+     // Ou si l'erreur est gérée en interne:
+     const result = await userService.getUser(1)
+     expect(result.error).toBe('Une erreur est survenue')
+   })
+   ```
+
+## Tests de composants Vue
+
+1. Utiliser Vue Test Utils pour les tests de composants
+   ```ts
+   import { mount } from '@vue/test-utils'
+   import { describe, it, expect } from 'vitest'
+   import UserProfile from './UserProfile.vue'
+   
+   describe('UserProfile', () => {
+     it('renders user data correctly', () => {
+       const user = { id: 1, name: 'John Doe', email: 'john@example.com' }
+       const wrapper = mount(UserProfile, {
+         props: { user }
+       })
+       
+       expect(wrapper.text()).toContain('John Doe')
+       expect(wrapper.text()).toContain('john@example.com')
+     })
+     
+     it('emits update event when button is clicked', async () => {
+       const user = { id: 1, name: 'John Doe' }
+       const wrapper = mount(UserProfile, {
+         props: { user }
+       })
+       
+       await wrapper.find('button.edit').trigger('click')
+       expect(wrapper.emitted('update')).toBeTruthy()
+       expect(wrapper.emitted('update')[0]).toEqual([user])
+     })
+   })
+   ```
+
+2. Tester les computed properties et les réactions
+   ```ts
+   import { mount } from '@vue/test-utils'
+   import { describe, it, expect } from 'vitest'
+   import Counter from './Counter.vue'
+   
+   describe('Counter', () => {
+     it('updates count when button is clicked', async () => {
+       const wrapper = mount(Counter)
+       
+       expect(wrapper.text()).toContain('Count: 0')
+       
+       await wrapper.find('button').trigger('click')
+       expect(wrapper.text()).toContain('Count: 1')
+       
+       await wrapper.find('button').trigger('click')
+       expect(wrapper.text()).toContain('Count: 2')
+     })
+     
+     it('doubles the count correctly', async () => {
+       const wrapper = mount(Counter)
+       
+       // Initial state
+       expect(wrapper.vm.doubleCount).toBe(0)
+       
+       // Update count
+       await wrapper.find('button').trigger('click')
+       expect(wrapper.vm.doubleCount).toBe(2)
+     })
+   })
+   ```
+
+3. Mocker les dépendances externes (Pinia, Vue Router, etc.)
+   ```ts
+   import { mount } from '@vue/test-utils'
+   import { createTestingPinia } from '@pinia/testing'
+   import { describe, it, expect, vi } from 'vitest'
+   import UserList from './UserList.vue'
+   import { useUserStore } from '@/stores/user'
+   
+   describe('UserList', () => {
+     it('fetches and displays users', async () => {
+       // Mock router
+       const router = {
+         push: vi.fn()
+       }
+       
+       // Mock Pinia store
+       const wrapper = mount(UserList, {
+         global: {
+           plugins: [
+             createTestingPinia({
+               createSpy: vi.fn,
+               initialState: {
+                 user: {
+                   users: [
+                     { id: 1, name: 'User 1' },
+                     { id: 2, name: 'User 2' }
+                   ]
+                 }
+               }
+             })
+           ],
+           mocks: {
+             $router: router
+           }
+         }
+       })
+       
+       // Access the store
+       const store = useUserStore()
+       
+       // Assert component renders users from store
+       expect(wrapper.findAll('.user-item')).toHaveLength(2)
+       expect(wrapper.text()).toContain('User 1')
+       expect(wrapper.text()).toContain('User 2')
+       
+       // Assert store action was called
+       expect(store.fetchUsers).toHaveBeenCalled()
+     })
+   })
+   ```
+
+## Tests d'intégration pour AdonisJS
+
+1. Utiliser les outils de test d'Adonis pour les tests d'intégration
+   ```ts
+   import test from 'japa'
+   import supertest from 'supertest'
+   import { makeUrl } from './helpers'
+   
+   test.group('Users API', () => {
+     test('get list of users', async (assert) => {
+       const response = await supertest(makeUrl())
+         .get('/api/users')
+         .set('Accept', 'application/json')
+         .expect('Content-Type', /json/)
+         .expect(200)
+         
+       assert.isArray(response.body.data)
+       assert.property(response.body, 'meta')
+     })
+     
+     test('create new user', async (assert) => {
+       const userData = {
+         name: 'Test User',
+         email: 'test@example.com',
+         password: 'password123'
+       }
+       
+       const response = await supertest(makeUrl())
+         .post('/api/users')
+         .send(userData)
+         .set('Accept', 'application/json')
+         .expect('Content-Type', /json/)
+         .expect(201)
+         
+       assert.equal(response.body.name, userData.name)
+       assert.equal(response.body.email, userData.email)
+       assert.notProperty(response.body, 'password')
+     })
+   })
+   ```
+
+2. Tester les validations et les erreurs
+   ```ts
+   test('returns validation errors for invalid data', async (assert) => {
+     const invalidUserData = {
+       name: '',
+       email: 'invalid-email'
+     }
+     
+     const response = await supertest(makeUrl())
+       .post('/api/users')
+       .send(invalidUserData)
+       .set('Accept', 'application/json')
+       .expect('Content-Type', /json/)
+       .expect(422)
+     
+     assert.property(response.body.errors, 'name')
+     assert.property(response.body.errors, 'email')
+     assert.property(response.body.errors, 'password')
+   })
+   ```
+
+3. Utiliser des factories pour les données de test
+   ```ts
+   // test/factories/user.factory.ts
+   import Factory from '@ioc:Adonis/Lucid/Factory'
+   import User from 'App/Models/User'
+   
+   export const UserFactory = Factory
+     .define(User, ({ faker }) => {
+       return {
+         name: faker.name.findName(),
+         email: faker.internet.email(),
+         password: 'password123'
+       }
+     })
+     .build()
+   
+   // Dans les tests
+   test('get user profile', async (assert) => {
+     const user = await UserFactory.create()
+     
+     const response = await supertest(makeUrl())
+       .get(`/api/users/${user.id}`)
+       .set('Authorization', `Bearer ${token}`)
+       .expect(200)
+     
+     assert.equal(response.body.id, user.id)
+   })
+   ```
+
+## Tests E2E avec Cypress
+
+1. Organiser les tests par fonctionnalité
+   ```ts
+   // cypress/e2e/auth.cy.ts
+   describe('Authentication', () => {
+     beforeEach(() => {
+       cy.visit('/')
+     })
+     
+     it('should allow user to log in', () => {
+       cy.get('[data-cy=login-button]').click()
+       cy.get('[data-cy=email-input]').type('user@example.com')
+       cy.get('[data-cy=password-input]').type('password123')
+       cy.get('[data-cy=submit-button]').click()
+       
+       cy.url().should('include', '/dashboard')
+       cy.get('[data-cy=user-greeting]').should('contain', 'Welcome, User')
+     })
+     
+     it('should show error for invalid credentials', () => {
+       cy.get('[data-cy=login-button]').click()
+       cy.get('[data-cy=email-input]').type('wrong@example.com')
+       cy.get('[data-cy=password-input]').type('wrongpassword')
+       cy.get('[data-cy=submit-button]').click()
+       
+       cy.get('[data-cy=error-message]').should('be.visible')
+       cy.get('[data-cy=error-message]').should('contain', 'Invalid credentials')
+     })
+   })
+   ```
+
+2. Utiliser des attributs data-* pour les sélecteurs
+   ```html
+   <button data-cy="submit-button">Submit</button>
+   ```
+
+3. Créer des commandes personnalisées pour les opérations communes
+   ```ts
+   // cypress/support/commands.ts
+   Cypress.Commands.add('login', (email, password) => {
+     cy.visit('/login')
+     cy.get('[data-cy=email-input]').type(email)
+     cy.get('[data-cy=password-input]').type(password)
+     cy.get('[data-cy=submit-button]').click()
+   })
+   
+   // Dans les tests
+   describe('Dashboard', () => {
+     beforeEach(() => {
+       cy.login('user@example.com', 'password123')
+     })
+     
+     it('should display user data', () => {
+       cy.get('[data-cy=user-info]').should('be.visible')
+     })
+   })
+   ```
+
+4. Tester les flux utilisateur complets
+   ```ts
+   describe('Product purchase', () => {
+     beforeEach(() => {
+       cy.login('customer@example.com', 'password123')
+     })
+     
+     it('should allow user to purchase a product', () => {
+       // Browse products
+       cy.visit('/products')
+       cy.get('[data-cy=product-card]').first().click()
+       
+       // Add to cart
+       cy.get('[data-cy=add-to-cart]').click()
+       cy.get('[data-cy=cart-count]').should('contain', '1')
+       
+       // Go to cart
+       cy.get('[data-cy=view-cart]').click()
+       cy.url().should('include', '/cart')
+       
+       // Proceed to checkout
+       cy.get('[data-cy=checkout-button]').click()
+       cy.url().should('include', '/checkout')
+       
+       // Fill shipping info
+       cy.get('[data-cy=address-input]').type('123 Test St')
+       cy.get('[data-cy=city-input]').type('Test City')
+       cy.get('[data-cy=zip-input]').type('12345')
+       
+       // Complete order
+       cy.get('[data-cy=place-order]').click()
+       
+       // Verify success
+       cy.url().should('include', '/order-confirmation')
+       cy.get('[data-cy=order-success]').should('be.visible')
+     })
+   })
+   ```
+
+## Bonnes pratiques générales
+
+1. Utiliser des snapshots pour les tests d'UI
+   ```ts
+   it('matches snapshot', () => {
+     const wrapper = mount(UserCard, {
+       props: { user: { name: 'John Doe', email: 'john@example.com' } }
+     })
+     expect(wrapper.html()).toMatchSnapshot()
+   })
+   ```
+
+2. Configurer les tests dans les pipelines CI/CD
+   ```yaml
+   # .github/workflows/test.yml
+   name: Tests
+   
+   on:
+     push:
+       branches: [main, develop]
+     pull_request:
+       branches: [main, develop]
+   
+   jobs:
+     test:
+       runs-on: ubuntu-latest
+       
+       steps:
+         - uses: actions/checkout@v3
+         - uses: actions/setup-node@v3
+           with:
+             node-version: '18'
+             cache: 'npm'
+         
+         - name: Install dependencies
+           run: npm ci
+         
+         - name: Run linter
+           run: npm run lint
+         
+         - name: Run unit tests
+           run: npm run test:unit
+         
+         - name: Run E2E tests
+           run: npm run test:e2e
+   ```
+
+3. Utiliser la séparation des environnements pour les tests
+   ```
+   # .env.test
+   NODE_ENV=test
+   DATABASE_URL=postgres://user:pass@localhost:5432/testdb
+   ```
+
+4. Implémenter des fixtures et des mocks réutilisables
+   ```ts
+   // tests/fixtures/users.ts
+   export const users = [
+     { id: 1, name: 'Admin User', email: 'admin@example.com', role: 'admin' },
+     { id: 2, name: 'Regular User', email: 'user@example.com', role: 'user' }
+   ]
+   
+   // Dans les tests
+   import { users } from '../fixtures/users'
+   
+   test('filters users by role', () => {
+     const adminUsers = filterUsersByRole(users, 'admin')
+     expect(adminUsers).toHaveLength(1)
+     expect(adminUsers[0].name).toBe('Admin User')
+   })
+   ```
