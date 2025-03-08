@@ -1,0 +1,836 @@
+---
+description: Bonnes pratiques pour Docker
+globs: Dockerfile*, docker-compose*.yml
+alwaysApply: false
+---
+# Bonnes pratiques Docker pour un projet Vue.js 3 + AdonisJS + PostgreSQL
+
+## Structure des Dockerfiles
+
+1. Dockerfile pour le frontend (Vue.js)
+   ```dockerfile
+   # docker/Dockerfile.frontend
+   # Build stage
+   FROM node:18-alpine AS build
+   
+   # Définir le répertoire de travail
+   WORKDIR /app
+   
+   # Copier package.json et package-lock.json
+   COPY frontend/package*.json ./
+   
+   # Installer les dépendances
+   RUN npm ci
+   
+   # Copier le reste des fichiers frontend
+   COPY frontend/ ./
+   
+   # Construire l'application
+   RUN npm run build
+   
+   # Production stage
+   FROM nginx:stable-alpine AS production
+   
+   # Copier la configuration nginx personnalisée
+   COPY docker/nginx/default.conf /etc/nginx/conf.d/default.conf
+   
+   # Copier les fichiers de build
+   COPY --from=build /app/dist /usr/share/nginx/html
+   
+   # Exposer le port 80
+   EXPOSE 80
+   
+   # Commande par défaut
+   CMD ["nginx", "-g", "daemon off;"]
+   ```
+
+2. Configuration NGINX pour le frontend
+   ```nginx
+   # docker/nginx/default.conf
+   server {
+     listen 80;
+     server_name _;
+     
+     root /usr/share/nginx/html;
+     index index.html;
+     
+     # Compression gzip
+     gzip on;
+     gzip_min_length 1000;
+     gzip_comp_level 6;
+     gzip_types text/plain text/css application/javascript application/json image/svg+xml;
+     gzip_vary on;
+     
+     # Cache des assets statiques
+     location ~* \.(js|css|png|jpg|jpeg|gif|ico|svg|woff|woff2|ttf|eot)$ {
+       expires 30d;
+       add_header Cache-Control "public, no-transform";
+     }
+     
+     # Routage SPA
+     location / {
+       try_files $uri $uri/ /index.html;
+     }
+     
+     # Redirect pour les API vers le backend
+     location /api {
+       proxy_pass http://backend:3333;
+       proxy_http_version 1.1;
+       proxy_set_header Upgrade $http_upgrade;
+       proxy_set_header Connection 'upgrade';
+       proxy_set_header Host $host;
+       proxy_cache_bypass $http_upgrade;
+     }
+     
+     # Redirect pour les WebSockets
+     location /socket.io {
+       proxy_pass http://backend:3333;
+       proxy_http_version 1.1;
+       proxy_set_header Upgrade $http_upgrade;
+       proxy_set_header Connection "upgrade";
+       proxy_set_header Host $host;
+       proxy_cache_bypass $http_upgrade;
+     }
+   }
+   ```
+
+3. Dockerfile pour le backend (AdonisJS)
+   ```dockerfile
+   # docker/Dockerfile.backend
+   FROM node:18-alpine
+   
+   # Définir le répertoire de travail
+   WORKDIR /app
+   
+   # Installer les dépendances globales
+   RUN npm install -g @adonisjs/cli
+   
+   # Copier package.json et package-lock.json
+   COPY backend/package*.json ./
+   
+   # Installer les dépendances
+   RUN npm ci
+   
+   # Copier le reste des fichiers backend
+   COPY backend/ ./
+   
+   # Génération du client Prisma
+   RUN npx prisma generate
+   
+   # Compiler le code TypeScript
+   RUN npm run build
+   
+   # Exposer le port
+   EXPOSE 3333
+   
+   # Commande pour générer les migrations et démarrer l'application
+   CMD ["sh", "-c", "node ace migration:run --force && node server.js"]
+   ```
+
+4. Dockerfile pour la base de données (PostgreSQL)
+   ```dockerfile
+   # docker/Dockerfile.db
+   FROM postgres:14-alpine
+   
+   # Copier les scripts d'initialisation
+   COPY docker/db/init.sql /docker-entrypoint-initdb.d/
+   
+   # Variables d'environnement personnalisées
+   ENV POSTGRES_USER=postgres
+   ENV POSTGRES_PASSWORD=postgres
+   ENV POSTGRES_DB=app
+   
+   # Exposer le port
+   EXPOSE 5432
+   ```
+
+## Docker Compose
+
+1. Configuration pour le développement
+   ```yaml
+   # docker-compose.dev.yml
+   version: '3.8'
+   
+   services:
+     frontend:
+       build:
+         context: .
+         dockerfile: docker/Dockerfile.frontend.dev
+       volumes:
+         - ./frontend:/app
+         - /app/node_modules
+       ports:
+         - "5173:5173"
+       environment:
+         - VITE_API_URL=http://localhost:3333
+         - VITE_WEBSOCKET_URL=http://localhost:3333
+       depends_on:
+         - backend
+         
+     backend:
+       build:
+         context: .
+         dockerfile: docker/Dockerfile.backend.dev
+       volumes:
+         - ./backend:/app
+         - /app/node_modules
+       ports:
+         - "3333:3333"
+       environment:
+         - NODE_ENV=development
+         - HOST=0.0.0.0
+         - PORT=3333
+         - DATABASE_URL=postgresql://postgres:postgres@db:5432/app
+         - APP_KEY=${APP_KEY}
+         - JWT_SECRET=${JWT_SECRET}
+       depends_on:
+         - db
+         
+     db:
+       image: postgres:14-alpine
+       volumes:
+         - postgres_data:/var/lib/postgresql/data
+         - ./docker/db/init.sql:/docker-entrypoint-initdb.d/init.sql
+       environment:
+         - POSTGRES_USER=postgres
+         - POSTGRES_PASSWORD=postgres
+         - POSTGRES_DB=app
+       ports:
+         - "5432:5432"
+         
+     adminer:
+       image: adminer
+       restart: always
+       ports:
+         - "8080:8080"
+       depends_on:
+         - db
+   
+   volumes:
+     postgres_data:
+   ```
+
+2. Dockerfile pour le développement frontend
+   ```dockerfile
+   # docker/Dockerfile.frontend.dev
+   FROM node:18-alpine
+   
+   WORKDIR /app
+   
+   COPY frontend/package*.json ./
+   
+   RUN npm install
+   
+   EXPOSE 5173
+   
+   CMD ["npm", "run", "dev", "--", "--host", "0.0.0.0"]
+   ```
+
+3. Dockerfile pour le développement backend
+   ```dockerfile
+   # docker/Dockerfile.backend.dev
+   FROM node:18-alpine
+   
+   WORKDIR /app
+   
+   COPY backend/package*.json ./
+   
+   RUN npm install
+   
+   EXPOSE 3333
+   
+   CMD ["npm", "run", "dev"]
+   ```
+
+4. Configuration pour la production
+   ```yaml
+   # docker-compose.prod.yml
+   version: '3.8'
+   
+   services:
+     frontend:
+       build:
+         context: .
+         dockerfile: docker/Dockerfile.frontend
+       restart: always
+       ports:
+         - "80:80"
+       depends_on:
+         - backend
+         
+     backend:
+       build:
+         context: .
+         dockerfile: docker/Dockerfile.backend
+       restart: always
+       expose:
+         - "3333"
+       environment:
+         - NODE_ENV=production
+         - HOST=0.0.0.0
+         - PORT=3333
+         - DATABASE_URL=postgresql://postgres:${DB_PASSWORD}@db:5432/app
+         - APP_KEY=${APP_KEY}
+         - JWT_SECRET=${JWT_SECRET}
+       depends_on:
+         - db
+         
+     db:
+       image: postgres:14-alpine
+       restart: always
+       volumes:
+         - postgres_data:/var/lib/postgresql/data
+       environment:
+         - POSTGRES_USER=postgres
+         - POSTGRES_PASSWORD=${DB_PASSWORD}
+         - POSTGRES_DB=app
+       expose:
+         - "5432"
+   
+   volumes:
+     postgres_data:
+   ```
+
+## Optimisations et sécurité
+
+1. Optimisation des images Docker
+   ```dockerfile
+   # Réduction de la taille des images Docker
+   
+   # Pour le frontend (Vue.js)
+   # Utiliser .dockerignore
+   # .dockerignore pour frontend
+   node_modules
+   dist
+   coverage
+   .git
+   .github
+   *.md
+   
+   # Pour le backend (AdonisJS)
+   # .dockerignore pour backend
+   node_modules
+   build
+   tmp
+   coverage
+   .git
+   .github
+   *.md
+   ```
+
+2. Sécurité des conteneurs
+   ```dockerfile
+   # Ajouter ces lignes aux Dockerfiles de production
+   
+   # Utiliser un utilisateur non root
+   RUN addgroup -g 1001 -S appuser && \
+       adduser -u 1001 -S appuser -G appuser
+   
+   USER appuser
+   
+   # Définir des variables d'environnement sécurisées
+   ENV NODE_ENV=production
+   ```
+
+3. Healthchecks pour les conteneurs
+   ```yaml
+   # Ajouter des healthchecks au docker-compose.prod.yml
+   
+   services:
+     backend:
+       # ...
+       healthcheck:
+         test: ["CMD", "curl", "-f", "http://localhost:3333/api/health"]
+         interval: 30s
+         timeout: 10s
+         retries: 5
+         start_period: 30s
+         
+     db:
+       # ...
+       healthcheck:
+         test: ["CMD-SHELL", "pg_isready -U postgres"]
+         interval: 10s
+         timeout: 5s
+         retries: 5
+         start_period: 10s
+   ```
+
+4. Limites de ressources
+   ```yaml
+   # Ajouter des limites de ressources au docker-compose.prod.yml
+   
+   services:
+     frontend:
+       # ...
+       deploy:
+         resources:
+           limits:
+             cpus: '0.5'
+             memory: 512M
+           reservations:
+             cpus: '0.25'
+             memory: 256M
+             
+     backend:
+       # ...
+       deploy:
+         resources:
+           limits:
+             cpus: '1'
+             memory: 1G
+           reservations:
+             cpus: '0.5'
+             memory: 512M
+             
+     db:
+       # ...
+       deploy:
+         resources:
+           limits:
+             cpus: '1'
+             memory: 2G
+           reservations:
+             cpus: '0.5'
+             memory: 1G
+   ```
+
+## Gestion des données et volumes
+
+1. Sauvegarde des données PostgreSQL
+   ```bash
+   # Script de sauvegarde - docker/scripts/backup-db.sh
+   #!/bin/bash
+   
+   # Variables
+   BACKUP_DIR="/backups"
+   DATE=$(date +%Y%m%d_%H%M%S)
+   CONTAINER_NAME="app_db_1"
+   
+   # Créer le répertoire de sauvegarde s'il n'existe pas
+   mkdir -p $BACKUP_DIR
+   
+   # Effectuer la sauvegarde
+   docker exec $CONTAINER_NAME pg_dump -U postgres app > "$BACKUP_DIR/backup_$DATE.sql"
+   
+   # Compresser la sauvegarde
+   gzip "$BACKUP_DIR/backup_$DATE.sql"
+   
+   # Nettoyer les anciennes sauvegardes (garder les 7 dernières)
+   ls -t $BACKUP_DIR/backup_*.sql.gz | tail -n +8 | xargs -r rm
+   
+   echo "Backup completed: $BACKUP_DIR/backup_$DATE.sql.gz"
+   ```
+
+2. Restauration des données
+   ```bash
+   # Script de restauration - docker/scripts/restore-db.sh
+   #!/bin/bash
+   
+   # Variables
+   BACKUP_FILE=$1
+   CONTAINER_NAME="app_db_1"
+   
+   if [ -z "$BACKUP_FILE" ]; then
+     echo "Usage: $0 <backup-file>"
+     exit 1
+   fi
+   
+   # Décompresser si nécessaire
+   if [[ $BACKUP_FILE == *.gz ]]; then
+     gunzip -c $BACKUP_FILE > /tmp/backup.sql
+     BACKUP_FILE="/tmp/backup.sql"
+   fi
+   
+   # Restaurer la sauvegarde
+   cat $BACKUP_FILE | docker exec -i $CONTAINER_NAME psql -U postgres -d app
+   
+   echo "Restoration completed from $BACKUP_FILE"
+   ```
+
+3. Configuration des volumes persistants
+   ```yaml
+   # docker-compose.prod.yml
+   volumes:
+     postgres_data:
+       driver: local
+       driver_opts:
+         type: 'none'
+         o: 'bind'
+         device: '/var/data/postgres'
+     
+     uploads:
+       driver: local
+       driver_opts:
+         type: 'none'
+         o: 'bind'
+         device: '/var/data/uploads'
+   
+   services:
+     backend:
+       # ...
+       volumes:
+         - uploads:/app/uploads
+         
+     db:
+       # ...
+       volumes:
+         - postgres_data:/var/lib/postgresql/data
+   ```
+
+## CI/CD avec Docker
+
+1. Script de déploiement
+   ```bash
+   # docker/scripts/deploy.sh
+   #!/bin/bash
+   
+   # Arrêter les conteneurs existants
+   docker-compose -f docker-compose.prod.yml down
+   
+   # Récupérer les dernières modifications
+   git pull
+   
+   # Reconstruire les images
+   docker-compose -f docker-compose.prod.yml build
+   
+   # Démarrer les conteneurs
+   docker-compose -f docker-compose.prod.yml up -d
+   
+   # Vérifier l'état des conteneurs
+   docker-compose -f docker-compose.prod.yml ps
+   ```
+
+2. GitHub Actions pour Docker
+   ```yaml
+   # .github/workflows/docker-build.yml
+   name: Docker Build
+   
+   on:
+     push:
+       branches: [main]
+   
+   jobs:
+     build:
+       runs-on: ubuntu-latest
+       
+       steps:
+         - name: Checkout code
+           uses: actions/checkout@v2
+         
+         - name: Set up Docker Buildx
+           uses: docker/setup-buildx-action@v1
+         
+         - name: Login to DockerHub
+           uses: docker/login-action@v1
+           with:
+             username: ${{ secrets.DOCKER_USERNAME }}
+             password: ${{ secrets.DOCKER_PASSWORD }}
+         
+         - name: Build and push Frontend
+           uses: docker/build-push-action@v2
+           with:
+             context: .
+             file: docker/Dockerfile.frontend
+             push: true
+             tags: user/app-frontend:latest
+         
+         - name: Build and push Backend
+           uses: docker/build-push-action@v2
+           with:
+             context: .
+             file: docker/Dockerfile.backend
+             push: true
+             tags: user/app-backend:latest
+   ```
+
+## Configuration multi-environnement
+
+1. Utilisation de .env pour les configurations
+   ```bash
+   # .env.example
+   # Variables d'environnement communes
+   APP_NAME=MyApp
+   
+   # Frontend variables
+   VITE_API_URL=http://localhost:3333
+   VITE_WEBSOCKET_URL=http://localhost:3333
+   
+   # Backend variables
+   NODE_ENV=development
+   HOST=0.0.0.0
+   PORT=3333
+   APP_KEY=
+   
+   # Database variables
+   DB_HOST=db
+   DB_PORT=5432
+   DB_USER=postgres
+   DB_PASSWORD=postgres
+   DB_NAME=app
+   DATABASE_URL=postgresql://${DB_USER}:${DB_PASSWORD}@${DB_HOST}:${DB_PORT}/${DB_NAME}
+   ```
+
+2. Script pour exécuter avec différents environnements
+   ```bash
+   # docker/scripts/run-env.sh
+   #!/bin/bash
+   
+   ENV=$1
+   
+   if [ -z "$ENV" ]; then
+     ENV="dev"
+   fi
+   
+   case $ENV in
+     dev)
+       echo "Starting development environment..."
+       docker-compose -f docker-compose.dev.yml up
+       ;;
+     prod)
+       echo "Starting production environment..."
+       docker-compose -f docker-compose.prod.yml up -d
+       ;;
+     test)
+       echo "Starting test environment..."
+       docker-compose -f docker-compose.test.yml up
+       ;;
+     *)
+       echo "Unknown environment: $ENV"
+       echo "Usage: $0 [dev|prod|test]"
+       exit 1
+       ;;
+   esac
+   ```
+
+## Networking et communication entre services
+
+1. Configuration des réseaux Docker
+   ```yaml
+   # docker-compose.prod.yml
+   networks:
+     frontend-network:
+       driver: bridge
+     backend-network:
+       driver: bridge
+   
+   services:
+     frontend:
+       # ...
+       networks:
+         - frontend-network
+         
+     backend:
+       # ...
+       networks:
+         - frontend-network
+         - backend-network
+         
+     db:
+       # ...
+       networks:
+         - backend-network
+   ```
+
+2. Configuration des redirections de port pour WebSocket
+   ```nginx
+   # Configuration NGINX pour WebSocket
+   http {
+     map $http_upgrade $connection_upgrade {
+       default upgrade;
+       '' close;
+     }
+     
+     server {
+       # ...
+       
+       location /socket.io/ {
+         proxy_pass http://backend:3333;
+         proxy_http_version 1.1;
+         proxy_set_header Upgrade $http_upgrade;
+         proxy_set_header Connection $connection_upgrade;
+         proxy_set_header Host $host;
+         proxy_cache_bypass $http_upgrade;
+       }
+     }
+   }
+   ```
+
+## Commandes Docker utiles
+
+```bash
+# Construire et démarrer les conteneurs en mode développement
+docker-compose -f docker-compose.dev.yml up --build
+
+# Démarrer les conteneurs en arrière-plan
+docker-compose -f docker-compose.prod.yml up -d
+
+# Arrêter les conteneurs
+docker-compose -f docker-compose.prod.yml down
+
+# Voir les logs
+docker-compose -f docker-compose.prod.yml logs -f
+
+# Exécuter des commandes dans un conteneur
+docker-compose -f docker-compose.dev.yml exec backend node ace make:controller User
+
+# Reconstruire uniquement un service
+docker-compose -f docker-compose.dev.yml up -d --no-deps --build backend
+
+# Nettoyer les ressources inutilisées
+docker system prune -a
+
+# Voir l'utilisation des ressources
+docker stats
+```
+
+## Migration et seeds dans Docker
+
+```bash
+# Script d'initialisation pour le backend
+# docker/scripts/init-backend.sh
+#!/bin/bash
+
+# Attendre que la base de données soit prête
+echo "Waiting for database to be ready..."
+/app/wait-for-it.sh db:5432 -t 60
+
+# Exécuter les migrations
+echo "Running migrations..."
+node ace migration:run --force
+
+# Seed les données initiales
+echo "Seeding database..."
+node ace db:seed
+
+# Démarrer l'application
+echo "Starting application..."
+exec "$@"
+```
+
+## Déploiement sur des environnements cloud
+
+1. Configuration pour Kubernetes
+   ```yaml
+   # kubernetes/deployment.yaml
+   apiVersion: apps/v1
+   kind: Deployment
+   metadata:
+     name: frontend
+   spec:
+     replicas: 2
+     selector:
+       matchLabels:
+         app: frontend
+     template:
+       metadata:
+         labels:
+           app: frontend
+       spec:
+         containers:
+         - name: frontend
+           image: user/app-frontend:latest
+           ports:
+           - containerPort: 80
+   ---
+   apiVersion: apps/v1
+   kind: Deployment
+   metadata:
+     name: backend
+   spec:
+     replicas: 2
+     selector:
+       matchLabels:
+         app: backend
+     template:
+       metadata:
+         labels:
+           app: backend
+       spec:
+         containers:
+         - name: backend
+           image: user/app-backend:latest
+           ports:
+           - containerPort: 3333
+           env:
+           - name: DATABASE_URL
+             valueFrom:
+               secretKeyRef:
+                 name: app-secrets
+                 key: database-url
+   ```
+
+2. Configuration pour Docker Swarm
+   ```yaml
+   # docker-compose.swarm.yml
+   version: '3.8'
+   
+   services:
+     frontend:
+       image: user/app-frontend:latest
+       deploy:
+         replicas: 2
+         update_config:
+           parallelism: 1
+           delay: 10s
+         restart_policy:
+           condition: on-failure
+         resources:
+           limits:
+             cpus: '0.5'
+             memory: 512M
+       ports:
+         - "80:80"
+         
+     backend:
+       image: user/app-backend:latest
+       deploy:
+         replicas: 2
+         update_config:
+           parallelism: 1
+           delay: 10s
+         restart_policy:
+           condition: on-failure
+         resources:
+           limits:
+             cpus: '1'
+             memory: 1G
+       secrets:
+         - app_key
+         - jwt_secret
+         - db_password
+       environment:
+         - NODE_ENV=production
+         - APP_KEY=/run/secrets/app_key
+         - JWT_SECRET=/run/secrets/jwt_secret
+         - DATABASE_URL=postgresql://postgres:${DB_PASSWORD}@db:5432/app
+         
+     db:
+       image: postgres:14-alpine
+       deploy:
+         placement:
+           constraints: [node.role == manager]
+         resources:
+           limits:
+             cpus: '1'
+             memory: 2G
+       volumes:
+         - postgres_data:/var/lib/postgresql/data
+       environment:
+         - POSTGRES_PASSWORD=/run/secrets/db_password
+         - POSTGRES_USER=postgres
+         - POSTGRES_DB=app
+       secrets:
+         - db_password
+   
+   volumes:
+     postgres_data:
+   
+   secrets:
+     app_key:
+       external: true
+     jwt_secret:
+       external: true
+     db_password:
+       external: true
+   ```
