@@ -1,0 +1,249 @@
+---
+description: Bonnes pratiques d'optimisation des performances
+globs: *.ts, *.vue, *.js
+alwaysApply: false
+---
+# Optimisation des performances
+
+## Frontend (Vue.js 3)
+
+1. Utiliser `defineAsyncComponent` pour le chargement paresseux des composants non critiques
+   ```ts
+   const AsyncComponent = defineAsyncComponent(() => import('./components/HeavyComponent.vue'))
+   ```
+
+2. Implémenter `<Suspense>` pour les composants asynchrones avec UI de fallback
+   ```vue
+   <Suspense>
+     <template #default>
+       <AsyncComponent />
+     </template>
+     <template #fallback>
+       <LoadingSpinner />
+     </template>
+   </Suspense>
+   ```
+
+3. Utiliser `shallowRef` pour les grands objets qui ne nécessitent pas de réactivité profonde
+   ```ts
+   const largeDataset = shallowRef(fetchLargeData())
+   ```
+
+4. Optimiser les rendus avec `v-once` pour le contenu statique
+   ```vue
+   <header v-once>
+     <!-- Contenu statique qui ne change jamais -->
+   </header>
+   ```
+
+5. Utiliser `v-memo` pour mémoriser des sections de template basées sur des dépendances
+   ```vue
+   <div v-memo="[item.id, item.updated]">
+     <!-- Contenu qui ne se met à jour que lorsque item.id ou item.updated change -->
+   </div>
+   ```
+
+6. Optimiser les listes avec `v-for` en utilisant une clé stable
+   ```vue
+   <div v-for="item in items" :key="item.id">
+     <!-- Le contenu ici ne sera mis à jour que si nécessaire -->
+   </div>
+   ```
+
+7. Utiliser `useEventListener` de VueUse pour les événements au lieu des écouteurs natifs
+   ```ts
+   import { useEventListener } from '@vueuse/core'
+   
+   useEventListener(window, 'resize', handleResize)
+   ```
+
+## Optimisation des images
+
+1. Utiliser des formats modernes (WebP) avec fallback
+   ```vue
+   <picture>
+     <source srcset="/images/hero.webp" type="image/webp">
+     <img src="/images/hero.jpg" alt="Description" width="800" height="600">
+   </picture>
+   ```
+
+2. Toujours spécifier width et height pour éviter les CLS (Cumulative Layout Shift)
+   ```vue
+   <img src="/images/product.webp" alt="Product" width="300" height="200">
+   ```
+
+3. Utiliser le lazy loading natif pour les images sous la ligne de flottaison
+   ```vue
+   <img src="/images/below-fold.webp" loading="lazy" alt="Description">
+   ```
+
+4. Utiliser `useIntersectionObserver` de VueUse pour un lazy loading plus avancé
+   ```ts
+   import { useIntersectionObserver } from '@vueuse/core'
+   
+   const imageRef = ref<HTMLElement | null>(null)
+   const { isVisible } = useIntersectionObserver(imageRef)
+   
+   // Charger l'image uniquement lorsqu'elle est visible
+   const imageSrc = computed(() => isVisible.value ? '/images/heavy.webp' : '')
+   ```
+
+## Optimisation JS et Vue.js
+
+1. Utiliser `useDebounceFn` et `useThrottleFn` de VueUse pour limiter les événements fréquents
+   ```ts
+   import { useDebounceFn } from '@vueuse/core'
+   
+   const debouncedSearch = useDebounceFn((query) => {
+     performSearch(query)
+   }, 300)
+   ```
+
+2. Éviter les calculs complexes dans les computed properties, préférer une approche memoized
+   ```ts
+   import { memoize } from 'lodash-es'
+   
+   const calculateComplexValue = memoize((id) => {
+     // Calcul coûteux ici
+     return result
+   })
+   
+   const displayValue = computed(() => {
+     return calculateComplexValue(props.id)
+   })
+   ```
+
+3. Utiliser `onMounted` au lieu de `watch` au démarrage quand c'est possible
+   ```ts
+   // Au lieu de:
+   watch(someRef, doSomething, { immediate: true })
+   
+   // Préférer:
+   onMounted(() => {
+     doSomething(someRef.value)
+   })
+   ```
+
+## API et Backend
+
+1. Implémenter un cache côté serveur pour les requêtes fréquentes
+   ```ts
+   // backend/app/services/cache.service.ts
+   export class CacheService {
+     private cache = new Map<string, { data: any, expiry: number }>()
+     
+     async get(key: string, fetcher: () => Promise<any>, ttl = 300000) {
+       const now = Date.now()
+       const cached = this.cache.get(key)
+       
+       if (cached && cached.expiry > now) {
+         return cached.data
+       }
+       
+       const data = await fetcher()
+       this.cache.set(key, { data, expiry: now + ttl })
+       return data
+     }
+   }
+   ```
+
+2. Utiliser la pagination par cursor pour les grandes listes de données
+   ```ts
+   // Au lieu de la pagination traditionnelle par page
+   // ?page=2&limit=10
+   
+   // Utiliser la pagination par cursor
+   // ?cursor=eyJpZCI6MTAwfQ==&limit=10
+   ```
+
+3. Optimiser les requêtes Prisma en sélectionnant uniquement les champs nécessaires
+   ```ts
+   const users = await prisma.user.findMany({
+     select: {
+       id: true,
+       name: true,
+       email: true,
+       // Seulement les champs dont on a besoin
+     },
+   })
+   ```
+
+4. Utiliser des transactions pour les opérations liées
+   ```ts
+   const result = await prisma.$transaction(async (tx) => {
+     const user = await tx.user.create({ data: userData })
+     await tx.profile.create({ data: { userId: user.id, ...profileData } })
+     return user
+   })
+   ```
+
+## Vite et build optimisation
+
+1. Utiliser le code splitting dynamique
+   ```ts
+   // router/index.ts
+   const routes = [
+     {
+       path: '/dashboard',
+       component: () => import('../views/Dashboard.vue')
+     }
+   ]
+   ```
+
+2. Configurer la compression Brotli/Gzip dans le déploiement
+
+3. Optimiser les dépendances avec `vite-plugin-optimize-persist`
+   ```ts
+   // vite.config.ts
+   import OptimizationPersist from 'vite-plugin-optimize-persist'
+   
+   export default defineConfig({
+     plugins: [
+       vue(),
+       OptimizationPersist()
+     ]
+   })
+   ```
+
+4. Configurer correctement le caching des assets statiques
+   ```ts
+   // Configuration nginx exemple
+   // location ~* \.(js|css|png|jpg|jpeg|gif|webp|svg|woff|woff2|ttf|eot)$ {
+   //   expires 1y;
+   //   add_header Cache-Control "public, no-transform";
+   // }
+   ```
+
+## Métriques et monitoring
+
+1. Implémenter des métriques Web Vitals côté client
+   ```ts
+   import { onCLS, onFID, onLCP } from 'web-vitals'
+   
+   function sendToAnalytics({ name, delta, value }) {
+     console.log(`Metric: ${name} | Value: ${value} | Delta: ${delta}`)
+     // Envoyer à votre service d'analytics
+   }
+   
+   onCLS(sendToAnalytics)
+   onFID(sendToAnalytics)
+   onLCP(sendToAnalytics)
+   ```
+
+2. Configurer un monitoring côté serveur pour AdonisJS
+   ```ts
+   // Utiliser un service comme New Relic, Datadog, etc.
+   ```
+
+3. Mesurer et optimiser les temps de réponse API
+   ```ts
+   // middleware/timing.middleware.ts
+   export default class TimingMiddleware {
+     public async handle({ request }: HttpContextContract, next: () => Promise<void>) {
+       const start = performance.now()
+       await next()
+       const duration = performance.now() - start
+       console.log(`${request.url()} - ${duration.toFixed(2)}ms`)
+     }
+   }
+   ```

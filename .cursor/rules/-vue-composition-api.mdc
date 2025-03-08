@@ -1,0 +1,678 @@
+---
+description: Meilleures pratiques pour la Composition API de Vue.js 3
+globs: *.vue
+alwaysApply: false
+---
+# Meilleures pratiques pour la Composition API de Vue.js 3
+
+## Structure des composants
+
+1. Utiliser exclusivement `<script setup>` avec TypeScript
+   ```vue
+   <script setup lang="ts">
+   // Code du composant
+   </script>
+   ```
+
+2. Organiser le code dans un ordre cohérent
+   ```vue
+   <script setup lang="ts">
+   // 1. Imports
+   import { ref, computed, onMounted } from 'vue'
+   import { useSomething } from '@/composables/useSomething'
+   
+   // 2. Props & Emits
+   interface Props {
+     title: string
+     items?: Item[]
+   }
+   const props = withDefaults(defineProps<Props>(), {
+     items: () => []
+   })
+   
+   const emit = defineEmits<{
+     (e: 'update', value: string): void
+     (e: 'delete'): void
+   }>()
+   
+   // 3. Composables
+   const { data, isLoading } = useSomething()
+   
+   // 4. État réactif
+   const count = ref(0)
+   const message = ref('')
+   
+   // 5. État dérivé (computed)
+   const doubleCount = computed(() => count.value * 2)
+   const filteredItems = computed(() => 
+     props.items.filter(item => item.isActive)
+   )
+   
+   // 6. Méthodes
+   function increment() {
+     count.value++
+   }
+   
+   function handleUpdate() {
+     emit('update', message.value)
+   }
+   
+   // 7. Watchers
+   watch(count, (newValue, oldValue) => {
+     console.log(`Count changed from ${oldValue} to ${newValue}`)
+   })
+   
+   // 8. Lifecycle hooks
+   onMounted(() => {
+     console.log('Component mounted')
+   })
+   </script>
+   ```
+
+3. Exposer les méthodes et propriétés pour les composants enfants
+   ```vue
+   <script setup lang="ts">
+   import { ref } from 'vue'
+   
+   const count = ref(0)
+   
+   function reset() {
+     count.value = 0
+   }
+   
+   // Exposer des méthodes/propriétés pour les parents ou tests
+   defineExpose({
+     count,
+     reset
+   })
+   </script>
+   ```
+
+## Gestion des props
+
+1. Définir les props avec la syntaxe TypeScript et des valeurs par défaut
+   ```vue
+   <script setup lang="ts">
+   interface Props {
+     title: string
+     subtitle?: string
+     items: Item[]
+     isEnabled?: boolean
+     variant?: 'primary' | 'secondary' | 'tertiary'
+   }
+   
+   const props = withDefaults(defineProps<Props>(), {
+     subtitle: '',
+     isEnabled: true,
+     variant: 'primary',
+     items: () => [] // Pour les tableaux/objets, utiliser une fonction
+   })
+   </script>
+   ```
+
+2. Utiliser `toRefs` pour destructurer les props tout en préservant la réactivité
+   ```vue
+   <script setup lang="ts">
+   import { toRefs, computed } from 'vue'
+   
+   const props = defineProps<{
+     user: User
+     settings: Settings
+   }>()
+   
+   // Destructurer tout en préservant la réactivité
+   const { user, settings } = toRefs(props)
+   
+   // Utiliser les références réactives
+   const userName = computed(() => user.value.firstName)
+   </script>
+   ```
+
+## Réactivité et gestion d'état
+
+1. Nommer clairement les refs selon leur contenu
+   ```vue
+   <script setup lang="ts">
+   // ❌ Éviter
+   const x = ref(0)
+   const y = ref(false)
+   const z = ref<string[]>([])
+   
+   // ✅ Préférer
+   const count = ref(0)
+   const isLoading = ref(false)
+   const userNames = ref<string[]>([])
+   </script>
+   ```
+
+2. Utiliser `reactive` pour les objets complexes imbriqués
+   ```vue
+   <script setup lang="ts">
+   // Pour les objets simples
+   const user = reactive({
+     name: 'John',
+     age: 30,
+     preferences: {
+       theme: 'dark',
+       notifications: true
+     }
+   })
+   
+   // Accès direct
+   console.log(user.preferences.theme)
+   
+   // Mise à jour
+   user.preferences.theme = 'light'
+   </script>
+   ```
+
+3. Préférer `ref` pour les valeurs primitives et les listes
+   ```vue
+   <script setup lang="ts">
+   const count = ref(0)
+   const isActive = ref(false)
+   const items = ref<string[]>(['apple', 'banana', 'orange'])
+   
+   // Mise à jour
+   count.value++
+   isActive.value = !isActive.value
+   items.value.push('grape')
+   </script>
+   ```
+
+4. Utiliser `computed` pour les valeurs dérivées
+   ```vue
+   <script setup lang="ts">
+   const items = ref([
+     { id: 1, name: 'Item 1', price: 10, quantity: 2 },
+     { id: 2, name: 'Item 2', price: 15, quantity: 1 },
+     { id: 3, name: 'Item 3', price: 20, quantity: 3 }
+   ])
+   
+   // Calculer les totaux
+   const subtotal = computed(() => 
+     items.value.reduce((sum, item) => sum + item.price * item.quantity, 0)
+   )
+   
+   const tax = computed(() => subtotal.value * 0.1)
+   
+   const total = computed(() => subtotal.value + tax.value)
+   </script>
+   ```
+
+5. Éviter de modifier directement les props
+   ```vue
+   <script setup lang="ts">
+   const props = defineProps<{ modelValue: string }>()
+   const emit = defineEmits<{ (e: 'update:modelValue', value: string): void }>()
+   
+   // ❌ Éviter
+   function updateValue(newValue: string) {
+     // Props are read-only!
+     props.modelValue = newValue
+   }
+   
+   // ✅ Préférer
+   function updateValue(newValue: string) {
+     emit('update:modelValue', newValue)
+   }
+   </script>
+   ```
+
+## Composables et réutilisation de la logique
+
+1. Extraire la logique réutilisable dans des composables
+   ```ts
+   // composables/useCounter.ts
+   import { ref, computed } from 'vue'
+   
+   export function useCounter(initialValue = 0, { min, max } = {}) {
+     const count = ref(initialValue)
+     
+     const increment = () => {
+       if (max !== undefined && count.value >= max) return
+       count.value++
+     }
+     
+     const decrement = () => {
+       if (min !== undefined && count.value <= min) return
+       count.value--
+     }
+     
+     const reset = () => {
+       count.value = initialValue
+     }
+     
+     const isMin = computed(() => min !== undefined && count.value <= min)
+     const isMax = computed(() => max !== undefined && count.value >= max)
+     
+     return {
+       count,
+       increment,
+       decrement,
+       reset,
+       isMin,
+       isMax
+     }
+   }
+   ```
+
+2. Utiliser les composables VueUse lorsque c'est pertinent
+   ```vue
+   <script setup lang="ts">
+   import { useMouse, useLocalStorage, useMediaQuery } from '@vueuse/core'
+   
+   // Suivre la position de la souris
+   const { x, y } = useMouse()
+   
+   // Stocker l'état dans le localStorage
+   const settings = useLocalStorage('user-settings', {
+     theme: 'light',
+     fontSize: 'medium'
+   })
+   
+   // Détecter les media queries
+   const isLargeScreen = useMediaQuery('(min-width: 1024px)')
+   </script>
+   ```
+
+3. Composables pour les appels API
+   ```ts
+   // composables/useApi.ts
+   import { ref } from 'vue'
+   
+   export function useApi<T, P = any>(
+     apiFn: (params?: P) => Promise<T>
+   ) {
+     const data = ref<T | null>(null)
+     const error = ref<Error | null>(null)
+     const isLoading = ref(false)
+     
+     async function execute(params?: P) {
+       isLoading.value = true
+       error.value = null
+       
+       try {
+         data.value = await apiFn(params)
+         return data.value
+       } catch (err) {
+         error.value = err instanceof Error 
+           ? err 
+           : new Error('Une erreur est survenue')
+         return null
+       } finally {
+         isLoading.value = false
+       }
+     }
+     
+     return {
+       data,
+       error,
+       isLoading,
+       execute
+     }
+   }
+   
+   // Utilisation
+   const { data: users, isLoading, error, execute: fetchUsers } = useApi(api.getUsers)
+   
+   // Appel de l'API
+   fetchUsers({ page: 1, limit: 10 })
+   ```
+
+## Template et binding
+
+1. Utiliser les directives de manière efficace
+   ```vue
+   <template>
+     <!-- Condition -->
+     <div v-if="isLoggedIn">
+       Bienvenue, {{ user.name }}!
+     </div>
+     <div v-else>
+       Veuillez vous connecter
+     </div>
+     
+     <!-- Boucles avec clé -->
+     <ul>
+       <li v-for="item in items" :key="item.id">
+         {{ item.name }}
+       </li>
+     </ul>
+     
+     <!-- Binding d'attributs -->
+     <img :src="imageUrl" :alt="imageAlt">
+     
+     <!-- Binding de classes conditionnelles -->
+     <div 
+       :class="[
+         'base-card',
+         { 'is-active': isActive },
+         size === 'large' ? 'card-large' : 'card-normal'
+       ]"
+     >
+       Contenu
+     </div>
+     
+     <!-- Event handling -->
+     <button @click.prevent="handleClick">
+       Cliquez ici
+     </button>
+   </template>
+   ```
+
+2. Utiliser les slots nommés pour une composition flexible
+   ```vue
+   <!-- ParentComponent.vue -->
+   <template>
+     <BaseCard>
+       <template #header>
+         <h2>{{ title }}</h2>
+       </template>
+       
+       <template #default>
+         <p>Contenu principal</p>
+       </template>
+       
+       <template #footer>
+         <button @click="submit">Soumettre</button>
+       </template>
+     </BaseCard>
+   </template>
+   
+   <!-- BaseCard.vue -->
+   <template>
+     <div class="card">
+       <div v-if="$slots.header" class="card-header">
+         <slot name="header"></slot>
+       </div>
+       
+       <div class="card-body">
+         <slot></slot>
+       </div>
+       
+       <div v-if="$slots.footer" class="card-footer">
+         <slot name="footer"></slot>
+       </div>
+     </div>
+   </template>
+   ```
+
+## Cycle de vie et hooks
+
+1. Gérer les effets avec onMounted, onUpdated, etc.
+   ```vue
+   <script setup lang="ts">
+   import { onMounted, onBeforeUnmount, ref } from 'vue'
+   
+   const chartRef = ref<HTMLElement | null>(null)
+   let chartInstance = null
+   
+   onMounted(() => {
+     if (chartRef.value) {
+       // Initialiser le graphique à partir de la référence DOM
+       chartInstance = new ChartLibrary(chartRef.value, {
+         // options...
+       })
+     }
+   })
+   
+   onBeforeUnmount(() => {
+     // Nettoyer les ressources
+     if (chartInstance) {
+       chartInstance.destroy()
+       chartInstance = null
+     }
+   })
+   </script>
+   
+   <template>
+     <div ref="chartRef" class="chart"></div>
+   </template>
+   ```
+
+2. Utiliser `provide/inject` pour les communications entre composants distants
+   ```vue
+   <!-- App.vue -->
+   <script setup lang="ts">
+   import { provide, readonly, ref } from 'vue'
+   
+   const theme = ref('light')
+   
+   function toggleTheme() {
+     theme.value = theme.value === 'light' ? 'dark' : 'light'
+   }
+   
+   // Fournir la valeur et une méthode pour la modifier
+   provide('theme', readonly(theme))
+   provide('toggleTheme', toggleTheme)
+   </script>
+   
+   <!-- DeepChildComponent.vue -->
+   <script setup lang="ts">
+   import { inject } from 'vue'
+   
+   const theme = inject('theme', ref('light'))
+   const toggleTheme = inject('toggleTheme', () => {})
+   </script>
+   
+   <template>
+     <div :class="`theme-${theme}`">
+       <button @click="toggleTheme">
+         Basculer en mode {{ theme === 'light' ? 'sombre' : 'clair' }}
+       </button>
+     </div>
+   </template>
+   ```
+
+## Intégration avec TypeScript
+
+1. Définir des interfaces pour les modèles de données
+   ```ts
+   // types/models.ts
+   export interface User {
+     id: string
+     name: string
+     email: string
+     role: 'admin' | 'user'
+     createdAt: string
+   }
+   
+   export interface Product {
+     id: string
+     name: string
+     description: string
+     price: number
+     inStock: boolean
+     categories: string[]
+   }
+   ```
+
+2. Typer les références correctement
+   ```vue
+   <script setup lang="ts">
+   import { ref, Ref } from 'vue'
+   import type { User } from '@/types/models'
+   
+   // Référence typée
+   const user = ref<User | null>(null)
+   
+   // Tableau typé
+   const users = ref<User[]>([])
+   
+   // Référence DOM typée
+   const inputRef = ref<HTMLInputElement | null>(null)
+   
+   // Fonction qui utilise la référence
+   function focusInput() {
+     inputRef.value?.focus()
+   }
+   </script>
+   ```
+
+3. Définir des interfaces pour les émissions d'événements
+   ```vue
+   <script setup lang="ts">
+   interface UpdateEvent {
+     id: string
+     value: string
+     timestamp: number
+   }
+   
+   const emit = defineEmits<{
+     (e: 'update', payload: UpdateEvent): void
+     (e: 'delete', id: string): void
+     (e: 'select'): void
+   }>()
+   
+   function handleInput(value: string) {
+     emit('update', {
+       id: 'some-id',
+       value,
+       timestamp: Date.now()
+     })
+   }
+   </script>
+   ```
+
+## Intégration avec Pinia
+
+1. Structure recommandée pour les stores Pinia
+   ```ts
+   // stores/user.store.ts
+   import { defineStore } from 'pinia'
+   import { ref, computed } from 'vue'
+   import type { User } from '@/types/models'
+   import { api } from '@/services/api'
+   
+   export const useUserStore = defineStore('user', () => {
+     // State
+     const user = ref<User | null>(null)
+     const isLoading = ref(false)
+     const error = ref<string | null>(null)
+     
+     // Getters
+     const isAuthenticated = computed(() => !!user.value)
+     const fullName = computed(() => 
+       user.value ? `${user.value.firstName} ${user.value.lastName}` : ''
+     )
+     const isAdmin = computed(() => 
+       user.value?.role === 'admin'
+     )
+     
+     // Actions
+     async function login(email: string, password: string) {
+       isLoading.value = true
+       error.value = null
+       
+       try {
+         const response = await api.auth.login(email, password)
+         user.value = response.user
+         return true
+       } catch (err) {
+         error.value = err instanceof Error 
+           ? err.message 
+           : 'Erreur lors de la connexion'
+         return false
+       } finally {
+         isLoading.value = false
+       }
+     }
+     
+     function logout() {
+       user.value = null
+       // Autres actions de nettoyage...
+     }
+     
+     return {
+       // State exposé
+       user,
+       isLoading,
+       error,
+       
+       // Getters
+       isAuthenticated,
+       fullName,
+       isAdmin,
+       
+       // Actions
+       login,
+       logout
+     }
+   })
+   ```
+
+2. Utiliser storeToRefs pour préserver la réactivité
+   ```vue
+   <script setup lang="ts">
+   import { storeToRefs } from 'pinia'
+   import { useUserStore } from '@/stores/user.store'
+   
+   const userStore = useUserStore()
+   
+   // Destructurer avec storeToRefs pour préserver la réactivité
+   const { user, isLoading, error } = storeToRefs(userStore)
+   
+   // Les actions peuvent être destructurées directement
+   const { login, logout } = userStore
+   
+   // Utilisation
+   async function handleLogin() {
+     await login(email.value, password.value)
+   }
+   </script>
+   ```
+
+## Performance
+
+1. Utiliser `shallowRef` pour les grands objets
+   ```vue
+   <script setup lang="ts">
+   import { shallowRef, triggerRef } from 'vue'
+   
+   // Pour les objets volumineux où une réactivité profonde n'est pas nécessaire
+   const largeDataset = shallowRef({
+     // Données volumineuses...
+   })
+   
+   function updateNestedProperty() {
+     largeDataset.value.some.nested.property = newValue
+     // Déclencher manuellement la réactivité après la mise à jour
+     triggerRef(largeDataset)
+   }
+   </script>
+   ```
+
+2. Utiliser `v-once` pour le contenu statique
+   ```vue
+   <template>
+     <header v-once>
+       <h1>{{ appTitle }}</h1>
+       <logo />
+     </header>
+   </template>
+   ```
+
+3. Utiliser `v-memo` pour mémoriser les parties de template
+   ```vue
+   <template>
+     <div v-for="item in list" :key="item.id" v-memo="[item.id, item.isSelected]">
+       <!-- Ce contenu ne sera recalculé que si item.id ou item.isSelected change -->
+       <item-component :item="item" />
+     </div>
+   </template>
+   ```
+
+4. Suspense pour les composants asynchrones
+   ```vue
+   <template>
+     <Suspense>
+       <template #default>
+         <async-component />
+       </template>
+       <template #fallback>
+         <loading-spinner />
+       </template>
+     </Suspense>
+   </template>
+   ```

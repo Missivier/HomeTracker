@@ -1,0 +1,664 @@
+---
+description: Bonnes pratiques pour la gestion d'état avec Pinia
+globs: *.ts, *.vues
+alwaysApply: false
+---
+# Bonnes pratiques pour Pinia
+
+## Architecture des stores
+
+1. Organiser les stores par domaine fonctionnel
+   ```
+   /stores
+   ├── auth.store.ts        # Authentification, utilisateur courant
+   ├── products.store.ts    # Produits et catalogue
+   ├── cart.store.ts        # Panier d'achat
+   ├── ui.store.ts          # État de l'interface
+   └── settings.store.ts    # Préférences utilisateur
+   ```
+
+2. Utiliser exclusivement la syntaxe "setup" et non l'ancienne API options
+   ```ts
+   // ❌ Éviter (API options)
+   export const useCounterStore = defineStore('counter', {
+     state: () => ({
+       count: 0
+     }),
+     getters: {
+       doubleCount: (state) => state.count * 2
+     },
+     actions: {
+       increment() {
+         this.count++
+       }
+     }
+   })
+   
+   // ✅ Préférer (setup syntax)
+   export const useCounterStore = defineStore('counter', () => {
+     const count = ref(0)
+     
+     const doubleCount = computed(() => count.value * 2)
+     
+     function increment() {
+       count.value++
+     }
+     
+     return {
+       count,
+       doubleCount,
+       increment
+     }
+   })
+   ```
+
+3. Structure interne recommandée pour les stores
+   ```ts
+   export const useProductsStore = defineStore('products', () => {
+     // 1. State (refs)
+     const products = ref<Product[]>([])
+     const selectedProductId = ref<string | null>(null)
+     const isLoading = ref(false)
+     const error = ref<Error | null>(null)
+     const filters = ref({
+       category: null,
+       price: { min: 0, max: 1000 },
+       inStock: false
+     })
+     
+     // 2. Getters (computed)
+     const selectedProduct = computed(() => 
+       products.value.find(p => p.id === selectedProductId.value) || null
+     )
+     
+     const filteredProducts = computed(() => 
+       products.value.filter(product => {
+         // Filtrage selon filters.value
+         return true // logique de filtrage...
+       })
+     )
+     
+     const productCount = computed(() => products.value.length)
+     
+     // 3. Actions (functions)
+     async function fetchProducts() {
+       isLoading.value = true
+       error.value = null
+       
+       try {
+         const data = await api.getProducts()
+         products.value = data
+       } catch (err) {
+         error.value = err instanceof Error ? err : new Error('Failed to fetch products')
+       } finally {
+         isLoading.value = false
+       }
+     }
+     
+     function selectProduct(id: string) {
+       selectedProductId.value = id
+     }
+     
+     function updateFilters(newFilters: Partial<typeof filters.value>) {
+       filters.value = { ...filters.value, ...newFilters }
+     }
+     
+     function resetFilters() {
+       filters.value = {
+         category: null,
+         price: { min: 0, max: 1000 },
+         inStock: false
+       }
+     }
+     
+     // 4. Initialization (if needed)
+     // fetchProducts() // Uncomment to fetch on store creation
+     
+     // 5. Return state, getters and actions
+     return {
+       // State
+       products,
+       selectedProductId,
+       isLoading,
+       error,
+       filters,
+       
+       // Getters
+       selectedProduct,
+       filteredProducts,
+       productCount,
+       
+       // Actions
+       fetchProducts,
+       selectProduct,
+       updateFilters,
+       resetFilters
+     }
+   })
+   ```
+
+## Utilisation dans les composants
+
+1. Utiliser storeToRefs pour préserver la réactivité
+   ```vue
+   <script setup lang="ts">
+   import { storeToRefs } from 'pinia'
+   import { useUserStore } from '@/stores/user.store'
+   
+   const userStore = useUserStore()
+   
+   // ❌ Éviter - perte de la réactivité
+   const { user, isLoggedIn } = userStore
+   
+   // ✅ Préférer - préserve la réactivité
+   const { user, isLoggedIn } = storeToRefs(userStore)
+   
+   // Les actions peuvent être déstructurées directement
+   const { login, logout, updateProfile } = userStore
+   </script>
+   ```
+
+2. Utiliser computed pour les getters dérivés du store
+   ```vue
+   <script setup lang="ts">
+   import { computed } from 'vue'
+   import { storeToRefs } from 'pinia'
+   import { useProductsStore } from '@/stores/products.store'
+   
+   const productsStore = useProductsStore()
+   const { products, filters } = storeToRefs(productsStore)
+   
+   // Computed dérivé des données du store
+   const saleProducts = computed(() => 
+     products.value.filter(product => product.onSale)
+   )
+   
+   // Computed basé sur plusieurs stores
+   const discountedPrice = computed(() => {
+     const { selectedProduct } = storeToRefs(productsStore)
+     const { discountRate } = storeToRefs(usePromotionsStore())
+     
+     if (!selectedProduct.value) return 0
+     
+     return selectedProduct.value.price * (1 - discountRate.value / 100)
+   })
+   </script>
+   ```
+
+3. Charger les données au montage du composant
+   ```vue
+   <script setup lang="ts">
+   import { onMounted } from 'vue'
+   import { storeToRefs } from 'pinia'
+   import { useProductsStore } from '@/stores/products.store'
+   
+   const productsStore = useProductsStore()
+   const { products, isLoading, error } = storeToRefs(productsStore)
+   const { fetchProducts } = productsStore
+   
+   onMounted(async () => {
+     if (products.value.length === 0) {
+       await fetchProducts()
+     }
+   })
+   </script>
+   
+   <template>
+     <div>
+       <LoadingSpinner v-if="isLoading" />
+       <ErrorMessage v-else-if="error" :message="error.message" />
+       <ProductList v-else :products="products" />
+     </div>
+   </template>
+   ```
+
+## Communication entre stores
+
+1. Accéder à un autre store depuis un store
+   ```ts
+   import { defineStore } from 'pinia'
+   import { ref, computed } from 'vue'
+   import { useUserStore } from './user.store'
+   
+   export const useCartStore = defineStore('cart', () => {
+     const cartItems = ref([])
+     
+     // ...
+     
+     async function checkout() {
+       const userStore = useUserStore()
+       
+       // Vérifier si l'utilisateur est connecté
+       if (!userStore.isLoggedIn) {
+         throw new Error('User must be logged in to checkout')
+       }
+       
+       // Utiliser les informations de l'utilisateur
+       const order = {
+         items: cartItems.value,
+         user: userStore.user.id,
+         shippingAddress: userStore.defaultAddress
+       }
+       
+       // ...
+     }
+     
+     return {
+       cartItems,
+       checkout
+     }
+   })
+   ```
+
+2. Réagir aux changements dans d'autres stores
+   ```ts
+   import { defineStore } from 'pinia'
+   import { ref, watch } from 'vue'
+   import { useUserStore } from './user.store'
+   
+   export const useCartStore = defineStore('cart', () => {
+     const cartItems = ref([])
+     const userStore = useUserStore()
+     
+     // Vider le panier lors de la déconnexion
+     watch(
+       () => userStore.isLoggedIn,
+       (isLoggedIn) => {
+         if (!isLoggedIn) {
+           cartItems.value = []
+         }
+       }
+     )
+     
+     // ...
+     
+     return {
+       cartItems
+     }
+   })
+   ```
+
+## Persistance et hydratation
+
+1. Utiliser le plugin de persistance pour le stockage local
+   ```ts
+   // main.ts
+   import { createApp } from 'vue'
+   import { createPinia } from 'pinia'
+   import piniaPluginPersistedstate from 'pinia-plugin-persistedstate'
+   import App from './App.vue'
+   
+   const pinia = createPinia()
+   pinia.use(piniaPluginPersistedstate)
+   
+   createApp(App)
+     .use(pinia)
+     .mount('#app')
+   ```
+
+2. Configurer la persistance au niveau du store
+   ```ts
+   import { defineStore } from 'pinia'
+   import { ref } from 'vue'
+   
+   export const useSettingsStore = defineStore('settings', () => {
+     const theme = ref('light')
+     const fontSize = ref('medium')
+     const notifications = ref(true)
+     
+     function setTheme(newTheme: 'light' | 'dark') {
+       theme.value = newTheme
+     }
+     
+     function setFontSize(size: 'small' | 'medium' | 'large') {
+       fontSize.value = size
+     }
+     
+     function toggleNotifications() {
+       notifications.value = !notifications.value
+     }
+     
+     return {
+       theme,
+       fontSize,
+       notifications,
+       setTheme,
+       setFontSize,
+       toggleNotifications
+     }
+   }, {
+     persist: {
+       key: 'user-settings',
+       storage: localStorage,
+       paths: ['theme', 'fontSize', 'notifications']
+     }
+   })
+   ```
+
+3. Persistance sélective et transformation
+   ```ts
+   export const useAuthStore = defineStore('auth', () => {
+     const user = ref(null)
+     const token = ref('')
+     const refreshToken = ref('')
+     
+     // ...
+     
+     return {
+       user,
+       token,
+       refreshToken
+     }
+   }, {
+     persist: {
+       key: 'auth',
+       storage: localStorage,
+       paths: ['token', 'refreshToken', 'user'],
+       beforeRestore: (context) => {
+         console.log('Before restoring auth store')
+       },
+       afterRestore: (context) => {
+         // Valider le token après restauration
+         if (context.store.token) {
+           // Vérifier la validité du token...
+         }
+       },
+       serializer: {
+         // Personnaliser la sérialisation/désérialisation
+         serialize: (data) => {
+           // Chiffrement possible ici
+           return JSON.stringify(data)
+         },
+         deserialize: (data) => {
+           // Déchiffrement possible ici
+           return JSON.parse(data)
+         }
+       }
+     }
+   })
+   ```
+
+## Gestion des API et des effets de bord
+
+1. Centraliser les appels API dans les actions
+   ```ts
+   import { defineStore } from 'pinia'
+   import { ref } from 'vue'
+   import { api } from '@/services/api'
+   
+   export const useProductsStore = defineStore('products', () => {
+     const products = ref([])
+     const isLoading = ref(false)
+     const error = ref(null)
+     
+     async function fetchProducts(filters = {}) {
+       isLoading.value = true
+       error.value = null
+       
+       try {
+         products.value = await api.products.getAll(filters)
+       } catch (err) {
+         error.value = err
+         throw err
+       } finally {
+         isLoading.value = false
+       }
+     }
+     
+     async function createProduct(productData) {
+       isLoading.value = true
+       error.value = null
+       
+       try {
+         const newProduct = await api.products.create(productData)
+         products.value.push(newProduct)
+         return newProduct
+       } catch (err) {
+         error.value = err
+         throw err
+       } finally {
+         isLoading.value = false
+       }
+     }
+     
+     async function updateProduct(id, updates) {
+       isLoading.value = true
+       error.value = null
+       
+       try {
+         const updatedProduct = await api.products.update(id, updates)
+         
+         // Mettre à jour le produit dans la liste
+         const index = products.value.findIndex(p => p.id === id)
+         if (index !== -1) {
+           products.value[index] = updatedProduct
+         }
+         
+         return updatedProduct
+       } catch (err) {
+         error.value = err
+         throw err
+       } finally {
+         isLoading.value = false
+       }
+     }
+     
+     async function deleteProduct(id) {
+       isLoading.value = true
+       error.value = null
+       
+       try {
+         await api.products.delete(id)
+         products.value = products.value.filter(p => p.id !== id)
+       } catch (err) {
+         error.value = err
+         throw err
+       } finally {
+         isLoading.value = false
+       }
+     }
+     
+     return {
+       products,
+       isLoading,
+       error,
+       fetchProducts,
+       createProduct,
+       updateProduct,
+       deleteProduct
+     }
+   })
+   ```
+
+2. Gestion des erreurs et du statut
+   ```ts
+   interface ApiState {
+     status: 'idle' | 'loading' | 'success' | 'error'
+     error: Error | null
+     lastFetched: Date | null
+   }
+   
+   export const useUsersStore = defineStore('users', () => {
+     const users = ref<User[]>([])
+     const apiState = ref<ApiState>({
+       status: 'idle',
+       error: null,
+       lastFetched: null
+     })
+     
+     function setLoading() {
+       apiState.value = {
+         status: 'loading',
+         error: null,
+         lastFetched: apiState.value.lastFetched
+       }
+     }
+     
+     function setSuccess() {
+       apiState.value = {
+         status: 'success',
+         error: null,
+         lastFetched: new Date()
+       }
+     }
+     
+     function setError(error: Error) {
+       apiState.value = {
+         status: 'error',
+         error,
+         lastFetched: apiState.value.lastFetched
+       }
+     }
+     
+     async function fetchUsers() {
+       // Éviter de refaire un appel si les données sont récentes
+       const fiveMinutes = 5 * 60 * 1000
+       const isFresh = apiState.value.lastFetched && 
+         (Date.now() - apiState.value.lastFetched.getTime() < fiveMinutes)
+       
+       if (apiState.value.status === 'loading' || 
+           (users.value.length > 0 && isFresh)) {
+         return
+       }
+       
+       setLoading()
+       
+       try {
+         users.value = await api.users.getAll()
+         setSuccess()
+       } catch (error) {
+         setError(error instanceof Error ? error : new Error('Failed to fetch users'))
+         throw error
+       }
+     }
+     
+     // Plus de fonctions...
+     
+     return {
+       users,
+       apiState,
+       fetchUsers
+     }
+   })
+   ```
+
+3. Optimistic Updates (mises à jour optimistes)
+   ```ts
+   export const useTodosStore = defineStore('todos', () => {
+     const todos = ref<Todo[]>([])
+     
+     async function addTodo(text: string) {
+       // Créer un ID temporaire
+       const tempId = `temp-${Date.now()}`
+       
+       // Ajouter immédiatement au state (mise à jour optimiste)
+       const newTodo = {
+         id: tempId,
+         text,
+         completed: false,
+         isTemp: true
+       }
+       
+       todos.value.push(newTodo)
+       
+       try {
+         // Appel API réel
+         const savedTodo = await api.todos.create({ text })
+         
+         // Remplacer la tâche temporaire par la tâche réelle
+         const index = todos.value.findIndex(t => t.id === tempId)
+         if (index !== -1) {
+           todos.value[index] = savedTodo
+         }
+       } catch (error) {
+         // En cas d'erreur, supprimer la tâche temporaire
+         todos.value = todos.value.filter(t => t.id !== tempId)
+         throw error
+       }
+     }
+     
+     async function toggleTodo(id: string) {
+       // Trouver la tâche
+       const todo = todos.value.find(t => t.id === id)
+       if (!todo) return
+       
+       // Sauvegarder l'état précédent
+       const previousState = { ...todo }
+       
+       // Mettre à jour optimistiquement
+       todo.completed = !todo.completed
+       
+       try {
+         // Appel API réel
+         await api.todos.update(id, { completed: todo.completed })
+       } catch (error) {
+         // Restaurer l'état précédent en cas d'erreur
+         const index = todos.value.findIndex(t => t.id === id)
+         if (index !== -1) {
+           todos.value[index] = previousState
+         }
+         throw error
+       }
+     }
+     
+     return {
+       todos,
+       addTodo,
+       toggleTodo
+     }
+   })
+   ```
+
+## Organisation pour de grandes applications
+
+1. Structurer les stores pour les applications complexes
+   ```
+   /stores
+   ├── modules/
+   │   ├── auth/
+   │   │   ├── index.ts          # Point d'entrée du module auth
+   │   │   ├── auth.store.ts     # Store principal
+   │   │   ├── types.ts          # Types du module
+   │   │   └── helpers.ts        # Fonctions utilitaires du module
+   │   ├── products/
+   │   │   ├── index.ts
+   │   │   ├── products.store.ts
+   │   │   ├── categories.store.ts
+   │   │   ├── types.ts
+   │   │   └── helpers.ts
+   │   └── cart/
+   │       ├── index.ts
+   │       ├── cart.store.ts
+   │       ├── shipping.store.ts
+   │       ├── types.ts
+   │       └── helpers.ts
+   ├── index.ts                 # Exporte tous les stores
+   └── types.ts                 # Types globaux
+   ```
+
+2. Créer des stores composables
+   ```ts
+   // stores/modules/products/useProductFiltering.ts
+   import { ref, computed } from 'vue'
+   
+   export function useProductFiltering(products) {
+     const filters = ref({
+       category: null,
+       priceRange: { min: 0, max: 1000 },
+       searchQuery: '',
+       inStock: false
+     })
+     
+     const filteredProducts = computed(() => {
+       return products.value.filter(product => {
+         // Filtre par catégorie
+         if (filters.value.category && 
+             product.category !== filters.value.category) {
+           return false
+         }
+         
+         // Filtre par prix
+         if (product.price < filters.value.priceRange.min || 
+             product.price > filters.value.priceRange.max) {
+           return false
+         }

@@ -1,0 +1,593 @@
+---
+description: Patterns et types recommandés pour TypeScript
+globs: *.ts, *.tsx, *.vue
+alwaysApply: false
+---
+# Patterns TypeScript recommandés
+
+## Types et interfaces
+
+1. Préférer les interfaces pour les objets extendables
+   ```ts
+   // ✅ Utiliser des interfaces pour les modèles d'objets
+   interface User {
+     id: string
+     name: string
+     email: string
+   }
+   
+   // L'extension d'interface est propre et naturelle
+   interface AdminUser extends User {
+     role: 'admin'
+     permissions: string[]
+   }
+   ```
+
+2. Utiliser des types pour les unions et les types utilitaires
+   ```ts
+   // ✅ Utiliser des types pour les unions
+   type Status = 'pending' | 'active' | 'suspended' | 'deleted'
+   
+   // ✅ Utiliser des types pour les aliases complexes
+   type UserRecord = Record<string, User>
+   
+   // ✅ Utiliser des types pour les mappings et transformations
+   type ReadonlyUser = Readonly<User>
+   ```
+
+3. Éviter les enum en faveur de const objects et types littéraux
+   ```ts
+   // ❌ Éviter
+   enum Role {
+     ADMIN = 'admin',
+     EDITOR = 'editor',
+     USER = 'user'
+   }
+   
+   // ✅ Préférer
+   const Role = {
+     ADMIN: 'admin',
+     EDITOR: 'editor', 
+     USER: 'user'
+   } as const
+   
+   // Type généré automatiquement
+   type Role = typeof Role[keyof typeof Role]
+   ```
+
+4. Utiliser les génériques pour la réutilisabilité des types
+   ```ts
+   // Définir un type de réponse API générique
+   interface ApiResponse<T> {
+     data: T
+     metadata: {
+       timestamp: string
+       requestId: string
+     }
+   }
+   
+   // Utilisation avec différents types
+   type UserResponse = ApiResponse<User>
+   type ProductsResponse = ApiResponse<Product[]>
+   
+   // Fonction générique
+   async function fetchData<T>(url: string): Promise<ApiResponse<T>> {
+     const response = await fetch(url)
+     return response.json()
+   }
+   
+   // Utilisation avec inférence de type
+   const userData = await fetchData<User>('/api/user')
+   ```
+
+## Narrowing de types et gardes
+
+1. Utiliser des prédicats de type
+   ```ts
+   // Type guard pour vérifier si un objet est un User
+   function isUser(obj: any): obj is User {
+     return (
+       typeof obj === 'object' &&
+       obj !== null &&
+       'id' in obj &&
+       'name' in obj &&
+       'email' in obj
+     )
+   }
+   
+   // Utilisation
+   function processEntity(entity: unknown) {
+     if (isUser(entity)) {
+       // TypeScript sait que entity est de type User ici
+       console.log(entity.name)
+     }
+   }
+   ```
+
+2. Utiliser des discriminants pour les unions
+   ```ts
+   // Types discriminés par une propriété commune
+   type LoadingState = { status: 'loading' }
+   type SuccessState = { status: 'success', data: User[] }
+   type ErrorState = { status: 'error', error: string }
+   
+   type State = LoadingState | SuccessState | ErrorState
+   
+   // Utilisation avec switch/case
+   function renderState(state: State) {
+     switch (state.status) {
+       case 'loading':
+         return <LoadingSpinner />
+       case 'success':
+         // TypeScript sait que state est de type SuccessState ici
+         return <UserList users={state.data} />
+       case 'error':
+         // TypeScript sait que state est de type ErrorState ici
+         return <ErrorMessage message={state.error} />
+     }
+   }
+   ```
+
+3. Utiliser `instanceof` pour les classes
+   ```ts
+   class HttpError extends Error {
+     constructor(public statusCode: number, message: string) {
+       super(message)
+     }
+   }
+   
+   class ValidationError extends Error {
+     constructor(public errors: Record<string, string[]>) {
+       super('Validation error')
+     }
+   }
+   
+   // Gestion d'erreurs
+   function handleError(error: unknown) {
+     if (error instanceof HttpError) {
+       // TypeScript sait que error est de type HttpError ici
+       console.log(`HTTP Error ${error.statusCode}: ${error.message}`)
+     } else if (error instanceof ValidationError) {
+       // TypeScript sait que error est de type ValidationError ici
+       console.log('Validation errors:', error.errors)
+     } else {
+       console.log('Unknown error:', error)
+     }
+   }
+   ```
+
+## Types utilitaires personnalisés
+
+1. NonEmptyArray - Garantit qu'un tableau contient au moins un élément
+   ```ts
+   type NonEmptyArray<T> = [T, ...T[]]
+   
+   // Utilisation
+   function getFirstItem<T>(items: NonEmptyArray<T>): T {
+     return items[0] // Safe access, we know it exists
+   }
+   
+   // ✅ Valide
+   getFirstItem([1, 2, 3])
+   
+   // ❌ Error: Argument of type '[]' is not assignable to parameter of type 'NonEmptyArray<never>'
+   getFirstItem([])
+   ```
+
+2. DeepPartial - Rend toutes les propriétés et sous-propriétés optionnelles
+   ```ts
+   type DeepPartial<T> = T extends object ? {
+     [P in keyof T]?: DeepPartial<T[P]>
+   } : T
+   
+   interface Config {
+     server: {
+       port: number
+       host: string
+       options: {
+         timeout: number
+         secure: boolean
+       }
+     }
+     database: {
+       url: string
+       credentials: {
+         username: string
+         password: string
+       }
+     }
+   }
+   
+   // Sans DeepPartial, on devrait fournir toutes les propriétés imbriquées
+   // Avec DeepPartial, on peut fournir seulement ce qu'on veut modifier
+   function updateConfig(config: DeepPartial<Config>) {
+     // Implementation
+   }
+   
+   // Utilisation
+   updateConfig({
+     server: {
+       port: 3000
+       // Pas besoin de spécifier host ou options
+     }
+     // Pas besoin de spécifier database
+   })
+   ```
+
+3. OmitByType - Permet d'omettre des propriétés par type
+   ```ts
+   type OmitByType<T, U> = {
+     [P in keyof T as T[P] extends U ? never : P]: T[P]
+   }
+   
+   interface User {
+     id: string
+     name: string
+     email: string
+     isActive: boolean
+     lastLogin: Date
+     metadata: Record<string, unknown>
+   }
+   
+   // Omettre toutes les propriétés de type booléen
+   type UserWithoutBooleans = OmitByType<User, boolean>
+   // Équivalent à { id: string, name: string, email: string, lastLogin: Date, metadata: Record<string, unknown> }
+   ```
+
+## Types conditionnels et inférence
+
+1. Inférer un type à partir d'un autre
+   ```ts
+   // Extraire le type d'élément d'un tableau
+   type ArrayElement<T> = T extends (infer U)[] ? U : never
+   
+   const numbers = [1, 2, 3, 4, 5]
+   type NumberType = ArrayElement<typeof numbers> // number
+   
+   // Extraire les types des paramètres d'une fonction
+   type Parameters<T> = T extends (...args: infer P) => any ? P : never
+   
+   function fetchUser(id: string, options?: { includeProfile: boolean }) {
+     // implementation
+   }
+   
+   type FetchUserParams = Parameters<typeof fetchUser>
+   // [id: string, options?: { includeProfile: boolean } | undefined]
+   ```
+
+2. Extraire les types des propriétés d'un objet
+   ```ts
+   // Obtenir le type d'une clé spécifique dans un objet
+   type PropType<T, K extends keyof T> = T[K]
+   
+   interface User {
+     id: string
+     name: string
+     age: number
+   }
+   
+   type UserIdType = PropType<User, 'id'> // string
+   type UserAgeType = PropType<User, 'age'> // number
+   ```
+
+## Patterns fonctionnels
+
+1. Composition de fonctions typée
+   ```ts
+   type Func<A, B> = (a: A) => B
+   
+   // Composition de deux fonctions
+   function compose<A, B, C>(f: Func<B, C>, g: Func<A, B>): Func<A, C> {
+     return (a: A) => f(g(a))
+   }
+   
+   // Composition de plusieurs fonctions
+   function pipe<A, B, C, D>(
+     a: A,
+     f: Func<A, B>,
+     g: Func<B, C>,
+     h: Func<C, D>
+   ): D {
+     return h(g(f(a)))
+   }
+   
+   // Exemple d'utilisation
+   const toLowerCase = (s: string) => s.toLowerCase()
+   const trim = (s: string) => s.trim()
+   const capitalize = (s: string) => s.charAt(0).toUpperCase() + s.slice(1)
+   
+   const formatName = compose(capitalize, compose(trim, toLowerCase))
+   
+   // Utilisation
+   const name = formatName('  JOHN DOE  ') // "John doe"
+   ```
+
+2. Pattern Result (Either)
+   ```ts
+   type Result<T, E = Error> = 
+     | { success: true; value: T }
+     | { success: false; error: E }
+   
+   function tryFn<T>(fn: () => T): Result<T> {
+     try {
+       return { success: true, value: fn() }
+     } catch (error) {
+       return { 
+         success: false, 
+         error: error instanceof Error ? error : new Error(String(error)) 
+       }
+     }
+   }
+   
+   async function tryAsync<T>(promise: Promise<T>): Promise<Result<T>> {
+     try {
+       const value = await promise
+       return { success: true, value }
+     } catch (error) {
+       return { 
+         success: false, 
+         error: error instanceof Error ? error : new Error(String(error)) 
+       }
+     }
+   }
+   
+   // Utilisation
+   async function fetchUserData(id: string) {
+     const result = await tryAsync(api.fetchUser(id))
+     
+     if (result.success) {
+       return result.value
+     } else {
+       console.error('Error fetching user:', result.error)
+       return null
+     }
+   }
+   ```
+
+## Gestion des réponses asynchrones
+
+1. Typer les réponses API de manière cohérente
+   ```ts
+   interface ApiResponse<T> {
+     data: T
+     status: number
+     message: string
+   }
+   
+   interface PaginatedApiResponse<T> extends ApiResponse<T[]> {
+     pagination: {
+       total: number
+       page: number
+       pageSize: number
+       totalPages: number
+     }
+   }
+   
+   // Fonction générique pour les appels API
+   async function apiCall<T>(
+     url: string, 
+     options?: RequestInit
+   ): Promise<ApiResponse<T>> {
+     const response = await fetch(url, {
+       headers: {
+         'Content-Type': 'application/json',
+         'Accept': 'application/json'
+       },
+       ...options
+     })
+     
+     const data = await response.json()
+     return data as ApiResponse<T>
+   }
+   
+   // Utilisation typée
+   interface User {
+     id: string
+     name: string
+     email: string
+   }
+   
+   async function getUser(id: string): Promise<User | null> {
+     const response = await apiCall<User>(`/api/users/${id}`)
+     return response.data
+   }
+   
+   async function getUsers(page = 1): Promise<PaginatedApiResponse<User>> {
+     return await apiCall<PaginatedApiResponse<User>>(`/api/users?page=${page}`)
+   }
+   ```
+
+2. Utiliser les types d'utilité pour les promesses
+   ```ts
+   // Type pour extraire le type de retour d'une promesse
+   type Awaited<T> = T extends Promise<infer U> ? U : T
+   
+   // Convertir une fonction synchrone en fonction asynchrone
+   type AsyncFunction<T extends (...args: any[]) => any> = 
+     (...args: Parameters<T>) => Promise<ReturnType<T>>
+   
+   // Fonction qui transforme toutes les fonctions d'un objet en async
+   type AsyncMethods<T> = {
+     [P in keyof T]: T[P] extends (...args: any[]) => any
+       ? AsyncFunction<T[P]>
+       : T[P]
+   }
+   
+   // Exemple d'utilisation
+   interface UserService {
+     getUser(id: string): User
+     searchUsers(query: string): User[]
+     deleteUser(id: string): boolean
+   }
+   
+   // Version asynchrone du service
+   type AsyncUserService = AsyncMethods<UserService>
+   
+   const asyncUserService: AsyncUserService = {
+     async getUser(id: string) {
+       // implementation
+     },
+     async searchUsers(query: string) {
+       // implementation
+     },
+     async deleteUser(id: string) {
+       // implementation
+     }
+   }
+   ```
+
+## Vue.js et TypeScript
+
+1. Définir les props de composant avec TypeScript
+   ```ts
+   // Props simples
+   interface ButtonProps {
+     label: string
+     type?: 'button' | 'submit' | 'reset'
+     size?: 'small' | 'medium' | 'large'
+     disabled?: boolean
+     loading?: boolean
+   }
+   
+   // Avec valeurs par défaut
+   const props = withDefaults(defineProps<ButtonProps>(), {
+     type: 'button',
+     size: 'medium',
+     disabled: false,
+     loading: false
+   })
+   ```
+
+2. Définir les events avec TypeScript
+   ```ts
+   // Définition des événements avec typages
+   const emit = defineEmits<{
+     (e: 'click', event: MouseEvent): void
+     (e: 'focus'): void
+     (e: 'blur'): void
+     (e: 'update:modelValue', value: string): void
+   }>()
+   ```
+
+3. Typer les refs
+   ```ts
+   // Références pour les primitives
+   const count = ref<number>(0)
+   const message = ref<string>('')
+   
+   // Références pour les objets
+   const user = ref<User | null>(null)
+   
+   // Références pour les tableaux
+   const items = ref<string[]>([])
+   
+   // Références DOM
+   const inputRef = ref<HTMLInputElement | null>(null)
+   const chartRef = ref<HTMLCanvasElement | null>(null)
+   ```
+
+4. Typer les composables
+   ```ts
+   // Composable pour la pagination
+   function usePagination<T>(options: {
+     fetchItems: (page: number, pageSize: number) => Promise<{
+       items: T[]
+       total: number
+     }>
+     pageSize?: number
+   }) {
+     const { fetchItems, pageSize = 10 } = options
+     
+     const currentPage = ref(1)
+     const items = ref<T[]>([])
+     const total = ref(0)
+     const isLoading = ref(false)
+     const error = ref<Error | null>(null)
+     
+     const totalPages = computed(() => 
+       Math.ceil(total.value / pageSize)
+     )
+     
+     const canGoNext = computed(() => 
+       currentPage.value < totalPages.value
+     )
+     
+     const canGoPrev = computed(() => 
+       currentPage.value > 1
+     )
+     
+     async function loadPage(page: number) {
+       if (page < 1 || (totalPages.value > 0 && page > totalPages.value)) {
+         return
+       }
+       
+       isLoading.value = true
+       error.value = null
+       
+       try {
+         const result = await fetchItems(page, pageSize)
+         items.value = result.items
+         total.value = result.total
+         currentPage.value = page
+       } catch (err) {
+         error.value = err instanceof Error ? err : new Error('Failed to load items')
+       } finally {
+         isLoading.value = false
+       }
+     }
+     
+     function nextPage() {
+       if (canGoNext.value) {
+         loadPage(currentPage.value + 1)
+       }
+     }
+     
+     function prevPage() {
+       if (canGoPrev.value) {
+         loadPage(currentPage.value - 1)
+       }
+     }
+     
+     // Charger la première page initialement
+     loadPage(1)
+     
+     return {
+       // State
+       currentPage,
+       items,
+       total,
+       isLoading,
+       error,
+       
+       // Computed
+       totalPages,
+       canGoNext,
+       canGoPrev,
+       
+       // Methods
+       loadPage,
+       nextPage,
+       prevPage
+     }
+   }
+   
+   // Utilisation
+   const {
+     items: users,
+     isLoading,
+     currentPage,
+     totalPages,
+     nextPage,
+     prevPage
+   } = usePagination<User>({
+     fetchItems: async (page, pageSize) => {
+       const response = await fetch(`/api/users?page=${page}&limit=${pageSize}`)
+       const data = await response.json()
+       return {
+         items: data.users,
+         total: data.total
+       }
+     },
+     pageSize: 20
+   })
+   ```

@@ -1,0 +1,118 @@
+---
+description: Standards et bonnes pratiques de développement
+globs: *.ts, *.vue, *.js
+alwaysApply: false
+---
+# Standards de code pour le projet Vue.js 3 + AdonisJS
+
+## Architecture et structure
+
+1. Utiliser une architecture modulaire avec séparation claire frontend/backend
+2. Organiser les fichiers par fonctionnalité plutôt que par type
+3. Chaque fichier ne doit contenir que du contenu lié (composants, sous-composants, helpers, types)
+4. Respecter le principe DRY en factorisant le code commun dans des fonctions utilitaires
+5. Préférer les petits composants réutilisables aux gros composants monolithiques
+
+## Conventions de nommage
+
+1. Utiliser `kebab-case` pour les répertoires et fichiers (ex: `components/auth-wizard`)
+2. Utiliser `PascalCase` pour les noms de composants (ex: `UserProfile.vue`)
+3. Utiliser `camelCase` pour les noms de fonctions et variables
+4. Préfixer les variables booléennes par des verbes auxiliaires (`isLoading`, `hasError`)
+5. Préfixer les refs Vue avec leur type de donnée pour une meilleure clarté
+6. Utiliser des exports nommés pour les fonctions (`export function` au lieu de `export default`)
+
+## TypeScript
+
+1. Utiliser TypeScript pour tout le code, tant frontend que backend
+2. Préférer les interfaces aux types pour leur extensibilité 
+3. Éviter les enums, utiliser des maps typées à la place
+4. Définir des interfaces pour toutes les props de composants
+5. Utiliser des types génériques pour améliorer la réutilisabilité
+6. Utiliser `unknown` au lieu de `any` quand le type est inconnu
+7. Utiliser des types discriminés pour le type narrowing
+
+## Vue.js 3 et Composition API
+
+1. Utiliser exclusivement `<script setup lang="ts">` pour les composants
+2. Organiser le code dans cet ordre: imports → props → emits → state → computed → methods → lifecycle
+3. Utiliser `defineProps<Interface>()` avec TypeScript pour les props
+4. Extraire la logique réutilisable dans des composables
+5. Éviter d'utiliser `v-if` et `v-for` sur le même élément
+6. Utiliser `ref()` et `computed()` pour les valeurs réactives
+7. Préférer `toRefs()` pour destructurer les props
+8. Utiliser `watchEffect()` au lieu de `watch()` quand pertinent
+
+## Pinia
+
+1. Structurer les stores par domaine fonctionnel
+2. Utiliser la syntaxe setup pour définir les stores
+3. Utiliser `storeToRefs()` pour préserver la réactivité lors de la déstructuration
+4. Utiliser des getters pour les valeurs dérivées
+5. Implémenter la persistance pour les stores qui le nécessitent
+6. Éviter les interdépendances circulaires entre les stores
+
+## Vue Router
+
+1. Utiliser un système de routes organisé par modules fonctionnels
+2. Implémenter le lazy loading pour les routes non critiques
+3. Utiliser des meta fields pour les permissions et configurations
+4. Mettre en place des guards de navigation pour les routes protégées
+5. Utiliser des noms de routes constants au lieu de hardcoder les URLs
+
+## Tailwind CSS V4
+
+1. Utiliser `flex gap-x` au lieu de `space-x-y` pour les espacements
+2. Utiliser la notation slash pour l'opacité (`bg-white/50`)
+3. Éviter les classes arbitraires, préférer les classes standards
+4. Utiliser les préfixes responsive de manière cohérente (`sm:`, `md:`, `lg:`)
+5. Organiser les classes dans cet ordre: layout → positionnement → dimensions → apparence → états
+6. Préférer les variables de couleur du thème aux valeurs hexadécimales
+7. Utiliser des composants d'UI réutilisables avec des classes Tailwind cohérentes
+
+## VueUse
+
+1. Utiliser les composables VueUse pour la logique commune (`useLocalStorage`, `useFetch`, etc.)
+2. Préférer les fonctions VueUse aux implémentations personnalisées pour la cohérence
+3. Utiliser `useAsyncState` pour gérer les appels API avec état de chargement
+4. Utiliser `useMediaQuery` pour la réactivité responsive
+5. Leverager `useIntersectionObserver` pour le lazy loading des images
+
+## Performance
+
+1. Mettre en œuvre le lazy loading pour les composants non critiques
+2. Utiliser `<Suspense>` pour les composants asynchrones avec UI de fallback
+3. Optimiser les images: format WebP, tailles appropriées, lazy loading
+4. Implémentation du code splitting via Vite pour réduire la taille des bundles
+5. Optimiser les Web Vitals (LCP, CLS, FID) avec les outils appropriés
+6. Utiliser `shallowRef` pour les grands objets qui ne nécessitent pas de réactivité profonde
+
+## AdonisJS et Backend
+
+1. Respecter le pattern MVC pour l'organisation du code backend
+2. Garder les contrôleurs légers, extraire la logique métier dans des services
+3. Utiliser la validation de schéma pour toutes les entrées utilisateur
+4. Implémenter des transactions pour les opérations multi-tables
+5. Gérer explicitement les erreurs avec les codes HTTP appropriés
+6. Documenter les endpoints API avec JSDoc
+7. Utiliser les middleware pour les fonctionnalités transversales
+
+## Prisma ORM
+
+1. Définir des modèles clairs et bien documentés dans `schema.prisma`
+2. Utiliser les migrations pour versionner les changements de schéma
+3. Éviter les requêtes N+1 en utilisant `include` pour les relations
+4. Implémenter des transactions pour les opérations complexes
+5. Créer des assistants de requête pour les opérations répétitives
+6. Organiser les opérations de base de données dans des classes de repository
+7. Utiliser les types générés par Prisma dans le code TypeScript
+
+## API REST et WebSockets
+
+1. Concevoir des endpoints RESTful cohérents et bien nommés
+2. Utiliser les codes HTTP appropriés pour les réponses
+3. Structurer les réponses JSON de manière cohérente
+4. Implémenter la pagination pour les listes de ressources
+5. Utiliser WebSockets uniquement pour les mises à jour en temps réel
+6. Structurer les événements WebSocket avec des noms clairs et des payloads bien définis
+7. Gérer la reconnexion côté client pour les WebSocke

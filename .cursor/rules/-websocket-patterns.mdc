@@ -1,0 +1,869 @@
+---
+description: Bonnes pratiques pour les WebSockets
+globs: *.ts
+alwaysApply: false
+---
+# Bonnes pratiques pour les WebSockets
+
+## Architecture côté serveur (AdonisJS)
+
+1. Structure des contrôleurs WebSocket
+   ```ts
+   // app/controllers/ws/chat.controller.ts
+   import { WsContextContract } from '@ioc:Ruby184/Socket.IO/WsContext'
+   import { PrismaClient } from '@prisma/client'
+   
+   export default class ChatController {
+     private prisma = new PrismaClient()
+     
+     /**
+      * Gérer la connexion d'un client
+      */
+     public async onConnection({ socket, auth }: WsContextContract) {
+       // Authentifier l'utilisateur
+       const user = auth.user
+       
+       if (!user) {
+         socket.disconnect()
+         return
+       }
+       
+       // Joindre les rooms personnalisées
+       socket.join(`user:${user.id}`)
+       
+       // Informer les autres utilisateurs
+       socket.broadcast.emit('user:online', {
+         userId: user.id,
+         status: 'online'
+       })
+       
+       // Logger la connexion
+       console.log(`User ${user.id} connected. Socket ID: ${socket.id}`)
+     }
+     
+     /**
+      * Gérer la déconnexion
+      */
+     public async onDisconnection({ socket, auth }: WsContextContract) {
+       const user = auth.user
+       
+       if (user) {
+         // Informer les autres utilisateurs
+         socket.broadcast.emit('user:offline', {
+           userId: user.id,
+           status: 'offline',
+           lastSeen: new Date()
+         })
+         
+         // Mettre à jour le statut dans la base de données
+         await this.prisma.user.update({
+           where: { id: user.id },
+           data: { lastSeen: new Date() }
+         })
+       }
+     }
+     
+     /**
+      * Gérer l'envoi d'un message
+      */
+     public async onChatMessage({ socket, auth, data }: WsContextContract) {
+       const user = auth.user
+       const { roomId, content, attachments = [] } = data
+       
+       if (!user || !roomId || !content) {
+         socket.emit('error', {
+           code: 'INVALID_MESSAGE',
+           message: 'Invalid message data'
+         })
+         return
+       }
+       
+       try {
+         // Vérifier si l'utilisateur est membre de la room
+         const membership = await this.prisma.chatMember.findUnique({
+           where: {
+             userId_chatId: {
+               userId: user.id,
+               chatId: roomId
+             }
+           }
+         })
+         
+         if (!membership) {
+           socket.emit('error', {
+             code: 'NOT_MEMBER',
+             message: 'You are not a member of this chat room'
+           })
+           return
+         }
+         
+         // Créer le message
+         const message = await this.prisma.message.create({
+           data: {
+             content,
+             userId: user.id,
+             chatId: roomId,
+             attachments: {
+               create: attachments.map((url: string) => ({ url }))
+             }
+           },
+           include: {
+             user: {
+               select: {
+                 id: true,
+                 name: true,
+                 avatar: true
+               }
+             },
+             attachments: true
+           }
+         })
+         
+         // Émettre à tous les membres de la room
+         socket.to(`room:${roomId}`).emit('chat:message', message)
+         
+         // Confirmer l'envoi au client
+         socket.emit('chat:message:sent', {
+           messageId: message.id,
+           timestamp: message.createdAt
+         })
+         
+         // Mettre à jour les messages non lus pour les autres membres
+         await this.prisma.chatMember.updateMany({
+           where: {
+             chatId: roomId,
+             userId: { not: user.id }
+           },
+           data: {
+             unreadCount: { increment: 1 }
+           }
+         })
+       } catch (error) {
+         console.error('Error sending message:', error)
+         socket.emit('error', {
+           code: 'SERVER_ERROR',
+           message: 'Failed to send message'
+         })
+       }
+     }
+     
+     /**
+      * Marquer une conversation comme lue
+      */
+     public async onMarkAsRead({ socket, auth, data }: WsContextContract) {
+       const user = auth.user
+       const { roomId } = data
+       
+       if (!user || !roomId) {
+         return
+       }
+       
+       try {
+         // Remettre à zéro le compteur non lu
+         await this.prisma.chatMember.update({
+           where: {
+             userId_chatId: {
+               userId: user.id,
+               chatId: roomId
+             }
+           },
+           data: {
+             unreadCount: 0,
+             lastReadAt: new Date()
+           }
+         })
+         
+         // Notifier le client
+         socket.emit('chat:read:confirmed', {
+           roomId,
+           timestamp: new Date()
+         })
+       } catch (error) {
+         console.error('Error marking as read:', error)
+       }
+     }
+     
+     /**
+      * Gérer les indicateurs de frappe
+      */
+     public async onTyping({ socket, auth, data }: WsContextContract) {
+       const user = auth.user
+       const { roomId, typing } = data
+       
+       if (!user || !roomId) {
+         return
+       }
+       
+       // Transmettre l'événement aux autres membres
+       socket.to(`room:${roomId}`).emit('chat:typing', {
+         userId: user.id,
+         roomId,
+         typing,
+         timestamp: new Date()
+       })
+     }
+   }
+   ```
+
+2. Configuration du serveur WebSocket
+   ```ts
+   // start/socket.ts
+   import Ws from '@ioc:Ruby184/Socket.IO/Server'
+   import SocketAuth from '@ioc:Ruby184/Socket.IO/Auth'
+
+   Ws.boot()
+
+   /**
+    * Activer CORS pour les WebSockets
+    */
+   Ws.io.origins(['*'])
+
+   /**
+    * Configurer l'authentification des WebSockets
+    */
+   Ws.io.use(SocketAuth.auth)
+
+   /**
+    * Définir les namespaces et événements
+    */
+   Ws.namespace('/')
+     .connected('ChatController.onConnection')
+     .disconnected('ChatController.onDisconnection')
+     .on('chat:message', 'ChatController.onChatMessage')
+     .on('chat:read', 'ChatController.onMarkAsRead')
+     .on('chat:typing', 'ChatController.onTyping')
+
+   // Namespace pour les notifications
+   Ws.namespace('/notifications')
+     .connected('NotificationController.onConnection')
+     .on('notification:read', 'NotificationController.onMarkAsRead')
+   ```
+
+3. Middleware d'authentification WebSocket
+   ```ts
+   // app/middleware/ws-auth.middleware.ts
+   import { SocketAuthMiddlewareContract } from '@ioc:Ruby184/Socket.IO/Auth'
+   import { PrismaClient } from '@prisma/client'
+   import jwt from 'jsonwebtoken'
+
+   export default class WsAuthMiddleware implements SocketAuthMiddlewareContract {
+     private prisma = new PrismaClient()
+     
+     /**
+      * Authentifier la connexion WebSocket
+      */
+     public async authenticate(socket, next) {
+       const token = socket.handshake.auth.token || 
+                     socket.handshake.headers.authorization?.replace('Bearer ', '')
+       
+       if (!token) {
+         return next(new Error('Authentication required'))
+       }
+       
+       try {
+         // Vérifier le token JWT
+         const payload = jwt.verify(token, process.env.JWT_SECRET || 'secret') as any
+         const userId = payload.sub
+         
+         // Récupérer l'utilisateur
+         const user = await this.prisma.user.findUnique({
+           where: { id: userId },
+           select: {
+             id: true,
+             name: true,
+             email: true,
+             role: true
+           }
+         })
+         
+         if (!user) {
+           return next(new Error('User not found'))
+         }
+         
+         // Attacher l'utilisateur au socket
+         socket.auth = { user }
+         socket.userId = user.id
+         
+         next()
+       } catch (error) {
+         console.error('WS Auth Error:', error)
+         next(new Error('Invalid authentication token'))
+       }
+     }
+   }
+   ```
+
+4. Gestion des salles et des utilisateurs
+   ```ts
+   // app/services/chat.service.ts
+   import { PrismaClient } from '@prisma/client'
+   import Ws from '@ioc:Ruby184/Socket.IO/Server'
+
+   export default class ChatService {
+     private prisma = new PrismaClient()
+     
+     /**
+      * Créer une nouvelle room de chat
+      */
+     async createChatRoom(name: string, userIds: string[], isGroupChat: boolean = false) {
+       // Vérifier qu'il y a au moins 2 utilisateurs
+       if (userIds.length < 2) {
+         throw new Error('A chat room must have at least 2 members')
+       }
+       
+       // Si c'est un chat privé (2 personnes), vérifier s'il existe déjà
+       if (!isGroupChat && userIds.length === 2) {
+         const existingChat = await this.findPrivateChatBetweenUsers(userIds[0], userIds[1])
+         
+         if (existingChat) {
+           return existingChat
+         }
+       }
+       
+       // Créer la room
+       const chatRoom = await this.prisma.chat.create({
+         data: {
+           name,
+           isGroupChat,
+           members: {
+             create: userIds.map(userId => ({
+               userId,
+               isAdmin: userId === userIds[0] // Premier utilisateur est admin
+             }))
+           }
+         },
+         include: {
+           members: {
+             include: {
+               user: {
+                 select: {
+                   id: true,
+                   name: true,
+                   avatar: true
+                 }
+               }
+             }
+           }
+         }
+       })
+       
+       // Notifier les utilisateurs par WebSocket
+       userIds.forEach(userId => {
+         Ws.io.to(`user:${userId}`).emit('chat:created', {
+           id: chatRoom.id,
+           name: chatRoom.name,
+           isGroupChat: chatRoom.isGroupChat,
+           members: chatRoom.members.map(m => m.user),
+           createdAt: chatRoom.createdAt
+         })
+       })
+       
+       return chatRoom
+     }
+     
+     /**
+      * Trouver un chat privé existant entre deux utilisateurs
+      */
+     async findPrivateChatBetweenUsers(userId1: string, userId2: string) {
+       // Récupérer les IDs de tous les chats de l'utilisateur 1
+       const user1Chats = await this.prisma.chatMember.findMany({
+         where: { userId: userId1 },
+         select: { chatId: true }
+       })
+       
+       const chatIds = user1Chats.map(chat => chat.chatId)
+       
+       // Vérifier si l'utilisateur 2 est membre d'un de ces chats
+       const commonChat = await this.prisma.chat.findFirst({
+         where: {
+           id: { in: chatIds },
+           isGroupChat: false,
+           members: {
+             some: {
+               userId: userId2
+             }
+           }
+         },
+         include: {
+           members: {
+             include: {
+               user: {
+                 select: {
+                   id: true,
+                   name: true,
+                   avatar: true
+                 }
+               }
+             }
+           }
+         }
+       })
+       
+       return commonChat
+     }
+     
+     /**
+      * Ajouter un utilisateur à une room
+      */
+     async addUserToRoom(chatId: string, userId: string, addedBy: string) {
+       // Vérifier si l'utilisateur qui ajoute est admin
+       const adminMember = await this.prisma.chatMember.findUnique({
+         where: {
+           userId_chatId: {
+             userId: addedBy,
+             chatId
+           }
+         }
+       })
+       
+       if (!adminMember || !adminMember.isAdmin) {
+         throw new Error('Only admins can add members')
+       }
+       
+       // Vérifier si l'utilisateur est déjà membre
+       const existingMember = await this.prisma.chatMember.findUnique({
+         where: {
+           userId_chatId: {
+             userId,
+             chatId
+           }
+         }
+       })
+       
+       if (existingMember) {
+         throw new Error('User is already a member of this chat')
+       }
+       
+       // Ajouter l'utilisateur
+       const member = await this.prisma.chatMember.create({
+         data: {
+           userId,
+           chatId,
+           isAdmin: false
+         },
+         include: {
+           user: {
+             select: {
+               id: true,
+               name: true,
+               avatar: true
+             }
+           },
+           chat: true
+         }
+       })
+       
+       // Notifier le nouvel utilisateur
+       Ws.io.to(`user:${userId}`).emit('chat:joined', {
+         chatId,
+         chat: member.chat
+       })
+       
+       // Notifier les membres existants
+       Ws.io.to(`room:${chatId}`).emit('chat:user:added', {
+         chatId,
+         user: member.user,
+         addedBy
+       })
+       
+       return member
+     }
+     
+     /**
+      * Retirer un utilisateur d'une room
+      */
+     async removeUserFromRoom(chatId: string, userId: string, removedBy: string) {
+       // Vérifications similaires à l'ajout...
+       
+       // Supprimer le membre
+       await this.prisma.chatMember.delete({
+         where: {
+           userId_chatId: {
+             userId,
+             chatId
+           }
+         }
+       })
+       
+       // Notifier l'utilisateur retiré
+       Ws.io.to(`user:${userId}`).emit('chat:left', {
+         chatId
+       })
+       
+       // Notifier les membres restants
+       Ws.io.to(`room:${chatId}`).emit('chat:user:removed', {
+         chatId,
+         userId,
+         removedBy
+       })
+     }
+   }
+   ```
+
+## Implémentation côté client (Vue.js)
+
+1. Service WebSocket de base
+   ```ts
+   // frontend/src/services/websocket.service.ts
+   import { io, Socket } from 'socket.io-client'
+   import { useAuthStore } from '@/stores/auth.store'
+
+   class WebSocketService {
+     private socket: Socket | null = null
+     private listeners: Map<string, Set<(data: any) => void>> = new Map()
+     private connected = false
+     private reconnectAttempts = 0
+     private readonly MAX_RECONNECT_ATTEMPTS = 5
+     
+     /**
+      * Initialiser la connexion
+      */
+     public async connect(): Promise<void> {
+       if (this.socket) {
+         return
+       }
+       
+       // Récupérer le token d'authentification
+       const authStore = useAuthStore()
+       const token = authStore.token
+       
+       if (!token) {
+         throw new Error('Authentication required')
+       }
+       
+       // Créer la connexion
+       this.socket = io(import.meta.env.VITE_WEBSOCKET_URL, {
+         auth: { token },
+         transports: ['websocket'],
+         autoConnect: true,
+         reconnection: true,
+         reconnectionAttempts: this.MAX_RECONNECT_ATTEMPTS,
+         reconnectionDelay: 1000,
+         reconnectionDelayMax: 5000
+       })
+       
+       // Configurer les événements de base
+       this._setupEventHandlers()
+     }
+     
+     /**
+      * Configurer les événements de base
+      */
+     private _setupEventHandlers(): void {
+       if (!this.socket) return
+       
+       this.socket.on('connect', () => {
+         console.log('WebSocket connected')
+         this.connected = true
+         this.reconnectAttempts = 0
+         this._notifyListeners('connection:success', null)
+       })
+       
+       this.socket.on('disconnect', (reason) => {
+         console.log('WebSocket disconnected:', reason)
+         this.connected = false
+         this._notifyListeners('connection:disconnect', { reason })
+       })
+       
+       this.socket.on('connect_error', (error) => {
+         console.error('WebSocket connection error:', error)
+         this.reconnectAttempts++
+         
+         if (this.reconnectAttempts >= this.MAX_RECONNECT_ATTEMPTS) {
+           this._notifyListeners('connection:failure', { error, final: true })
+         } else {
+           this._notifyListeners('connection:failure', { error, final: false })
+         }
+       })
+       
+       // Gestion générique des erreurs
+       this.socket.on('error', (error) => {
+         console.error('WebSocket error:', error)
+         this._notifyListeners('error', error)
+       })
+     }
+     
+     /**
+      * Notifier tous les écouteurs d'un événement
+      */
+     private _notifyListeners(event: string, data: any): void {
+       const handlers = this.listeners.get(event)
+       
+       if (handlers) {
+         handlers.forEach(handler => handler(data))
+       }
+     }
+     
+     /**
+      * Déconnecter du serveur
+      */
+     public disconnect(): void {
+       if (this.socket) {
+         this.socket.disconnect()
+         this.socket = null
+         this.connected = false
+       }
+     }
+     
+     /**
+      * Émettre un événement au serveur
+      */
+     public emit(event: string, data?: any): void {
+       if (!this.socket || !this.connected) {
+         console.warn('Cannot emit event, not connected:', event)
+         return
+       }
+       
+       this.socket.emit(event, data)
+     }
+     
+     /**
+      * S'abonner à un événement
+      */
+     public on(event: string, callback: (data: any) => void): () => void {
+       // Créer un set pour cet événement s'il n'existe pas
+       if (!this.listeners.has(event)) {
+         this.listeners.set(event, new Set())
+         
+         // S'abonner au niveau du socket si ce n'est pas un événement interne
+         if (!event.startsWith('connection:') && this.socket) {
+           this.socket.on(event, (data) => {
+             this._notifyListeners(event, data)
+           })
+         }
+       }
+       
+       // Ajouter l'écouteur
+       this.listeners.get(event)!.add(callback)
+       
+       // Retourner une fonction de nettoyage
+       return () => this.off(event, callback)
+     }
+     
+     /**
+      * Se désabonner d'un événement
+      */
+     public off(event: string, callback: (data: any) => void): void {
+       const handlers = this.listeners.get(event)
+       
+       if (handlers) {
+         handlers.delete(callback)
+         
+         // Retirer l'événement s'il n'y a plus d'écouteurs
+         if (handlers.size === 0) {
+           this.listeners.delete(event)
+           
+           // Se désabonner au niveau du socket
+           if (!event.startsWith('connection:') && this.socket) {
+             this.socket.off(event)
+           }
+         }
+       }
+     }
+     
+     /**
+      * Vérifier si la connexion est établie
+      */
+     public isConnected(): boolean {
+       return this.connected
+     }
+   }
+
+   // Exporter une instance unique
+   export const websocketService = new WebSocketService()
+   export default websocketService
+   ```
+
+2. Composable VueUse pour WebSocket
+   ```ts
+   // frontend/src/composables/useWebSocket.ts
+   import { ref, onMounted, onBeforeUnmount } from 'vue'
+   import { websocketService } from '@/services/websocket.service'
+   import { useAuthStore } from '@/stores/auth.store'
+
+   export function useWebSocket() {
+     const isConnected = ref(false)
+     const connectionError = ref<string | null>(null)
+     const isReconnecting = ref(false)
+     
+     // Se connecter au WebSocket
+     async function connect() {
+       try {
+         connectionError.value = null
+         isReconnecting.value = false
+         await websocketService.connect()
+         isConnected.value = true
+       } catch (error) {
+         connectionError.value = error.message
+         isConnected.value = false
+       }
+     }
+     
+     // Se déconnecter
+     function disconnect() {
+       websocketService.disconnect()
+       isConnected.value = false
+     }
+     
+     // Émettre un événement
+     function emit(event: string, data?: any) {
+       websocketService.emit(event, data)
+     }
+     
+     // S'abonner à un événement
+     function on(event: string, callback: (data: any) => void) {
+       return websocketService.on(event, callback)
+     }
+     
+     // Événements de connexion
+     const cleanupFunctions: (() => void)[] = []
+     
+     onMounted(() => {
+       // Vérifier l'état d'authentification
+       const authStore = useAuthStore()
+       
+       if (authStore.isAuthenticated) {
+         connect()
+       }
+       
+       // S'abonner aux événements de connexion
+       cleanupFunctions.push(
+         websocketService.on('connection:success', () => {
+           isConnected.value = true
+           connectionError.value = null
+           isReconnecting.value = false
+         })
+       )
+       
+       cleanupFunctions.push(
+         websocketService.on('connection:disconnect', () => {
+           isConnected.value = false
+           isReconnecting.value = true
+         })
+       )
+       
+       cleanupFunctions.push(
+         websocketService.on('connection:failure', ({ error, final }) => {
+           connectionError.value = error.message
+           isConnected.value = false
+           isReconnecting.value = !final
+           
+           if (final) {
+             // Réauthentifier ou afficher un message d'erreur
+           }
+         })
+       )
+       
+       // Réagir aux changements d'authentification
+       const unsubscribeAuth = authStore.$subscribe((mutation, state) => {
+         if (state.isAuthenticated && !isConnected.value) {
+           connect()
+         } else if (!state.isAuthenticated && isConnected.value) {
+           disconnect()
+         }
+       })
+       
+       cleanupFunctions.push(unsubscribeAuth)
+     })
+     
+     // Nettoyage à la destruction du composant
+     onBeforeUnmount(() => {
+       cleanupFunctions.forEach(cleanup => cleanup())
+     })
+     
+     return {
+       isConnected,
+       connectionError,
+       isReconnecting,
+       connect,
+       disconnect,
+       emit,
+       on
+     }
+   }
+   ```
+
+3. Store Pinia pour le Chat
+   ```ts
+   // frontend/src/stores/chat.store.ts
+   import { defineStore } from 'pinia'
+   import { ref, computed } from 'vue'
+   import { useWebSocket } from '@/composables/useWebSocket'
+   import { api } from '@/services/api'
+
+   export interface ChatRoom {
+     id: string
+     name: string
+     isGroupChat: boolean
+     members: ChatMember[]
+     createdAt: string
+     updatedAt: string
+     lastMessage?: Message | null
+   }
+
+   export interface ChatMember {
+     id: string
+     name: string
+     avatar?: string
+   }
+
+   export interface Message {
+     id: string
+     content: string
+     userId: string
+     chatId: string
+     createdAt: string
+     user: {
+       id: string
+       name: string
+       avatar?: string
+     }
+     attachments?: { id: string; url: string }[]
+   }
+
+   export const useChatStore = defineStore('chat', () => {
+     // État
+     const rooms = ref<ChatRoom[]>([])
+     const activeRoomId = ref<string | null>(null)
+     const messages = ref<Record<string, Message[]>>({})
+     const isLoadingMessages = ref(false)
+     const typingUsers = ref<Record<string, Record<string, number>>>({})
+     
+     // Getters
+     const activeRoom = computed(() => 
+       rooms.value.find(room => room.id === activeRoomId.value) || null
+     )
+     
+     const activeMessages = computed(() => 
+       activeRoomId.value ? messages.value[activeRoomId.value] || [] : []
+     )
+     
+     const roomsWithUnread = computed(() => {
+       return rooms.value.map(room => {
+         const unreadCount = room.unreadCount || 0
+         return {
+           ...room,
+           unreadCount
+         }
+       })
+     })
+     
+     const activeTypingUsers = computed(() => {
+       if (!activeRoomId.value) return []
+       
+       const roomTyping = typingUsers.value[activeRoomId.value] || {}
+       const now = Date.now()
+       const activeTypers: string[] = []
+       
+       // Considérer seulement les utilisateurs qui tapent depuis moins de 3 secondes
+       for (const [userId, timestamp] of Object.entries(roomTyping)) {
+         if (now - timestamp < 3000) {
+           const member = activeRoom.value?.members.find(m => m.id === userId)
+           if (member) {
+             activeTypers.push(member.name)
+           }
+         }
+       }
+       
+       return activeTypers
+     })

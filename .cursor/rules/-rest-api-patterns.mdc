@@ -1,0 +1,1238 @@
+---
+description: Bonnes pratiques pour les API REST
+globs: *.ts
+alwaysApply: false
+---
+# Bonnes pratiques pour les API REST
+
+## Principes de conception
+
+1. Adhérer aux principes RESTful
+   ```
+   - Utiliser les méthodes HTTP appropriées (GET, POST, PUT, DELETE)
+   - Manipuler les ressources via leurs URI
+   - Rendre les API sans état (stateless)
+   - Utiliser des représentations cohérentes (JSON)
+   - Lier les ressources entre elles (HATEOAS)
+   ```
+
+2. Structure d'URL cohérente
+   ```
+   GET /api/users              # Liste des utilisateurs
+   GET /api/users/123          # Détails d'un utilisateur
+   POST /api/users             # Créer un utilisateur
+   PUT /api/users/123          # Mettre à jour un utilisateur
+   DELETE /api/users/123       # Supprimer un utilisateur
+   
+   GET /api/users/123/posts    # Posts d'un utilisateur
+   POST /api/users/123/posts   # Créer un post pour un utilisateur
+   ```
+
+3. Convention de nommage des ressources
+   ```
+   - Utiliser des noms (et non des verbes) pour les ressources
+   - Préférer le pluriel pour les collections
+   - Utiliser des kebab-case pour les URI multi-mots
+   - Éviter d'utiliser des espaces ou caractères spéciaux
+   
+   ✅ /api/blog-posts
+   ❌ /api/getBlogPosts
+   ❌ /api/blog_posts
+   ```
+
+## Gestion des requêtes et réponses
+
+1. Format de réponse standardisé
+   ```ts
+   // Réponse pour une collection
+   {
+     "data": [
+       { /* objet 1 */ },
+       { /* objet 2 */ }
+     ],
+     "meta": {
+       "total": 100,
+       "page": 1,
+       "limit": 20,
+       "totalPages": 5
+     },
+     "links": {
+       "self": "/api/users?page=1&limit=20",
+       "first": "/api/users?page=1&limit=20",
+       "prev": null,
+       "next": "/api/users?page=2&limit=20",
+       "last": "/api/users?page=5&limit=20"
+     }
+   }
+   
+   // Réponse pour une ressource unique
+   {
+     "data": {
+       "id": "123",
+       "type": "users",
+       "attributes": {
+         "name": "John Doe",
+         "email": "john@example.com",
+         "createdAt": "2023-01-15T12:00:00Z"
+       },
+       "relationships": {
+         "posts": {
+           "links": {
+             "related": "/api/users/123/posts"
+           }
+         }
+       }
+     }
+   }
+   
+   // Réponse d'erreur
+   {
+     "error": {
+       "code": "VALIDATION_ERROR",
+       "message": "La validation a échoué",
+       "details": [
+         {
+           "field": "email",
+           "message": "L'email doit être valide"
+         }
+       ]
+     }
+   }
+   ```
+
+2. Implémentation des réponses dans AdonisJS
+   ```ts
+   // app/controllers/users.controller.ts
+   import { HttpContextContract } from '@ioc:Adonis/Core/HttpContext'
+   
+   export default class UsersController {
+     public async index({ request, response }: HttpContextContract) {
+       const page = request.input('page', 1)
+       const limit = request.input('limit', 20)
+       
+       const users = await UserService.getUsers({ page, limit })
+       const total = await UserService.countUsers()
+       const totalPages = Math.ceil(total / limit)
+       
+       // Construire les liens de pagination
+       const buildUrl = (page: number) => 
+         `/api/users?page=${page}&limit=${limit}`
+       
+       return response.ok({
+         data: users,
+         meta: {
+           total,
+           page,
+           limit,
+           totalPages
+         },
+         links: {
+           self: buildUrl(page),
+           first: buildUrl(1),
+           prev: page > 1 ? buildUrl(page - 1) : null,
+           next: page < totalPages ? buildUrl(page + 1) : null,
+           last: buildUrl(totalPages)
+         }
+       })
+     }
+     
+     public async show({ params, response }: HttpContextContract) {
+       const user = await UserService.getUserById(params.id)
+       
+       if (!user) {
+         return response.notFound({
+           error: {
+             code: 'RESOURCE_NOT_FOUND',
+             message: 'User not found'
+           }
+         })
+       }
+       
+       return response.ok({
+         data: {
+           id: user.id,
+           type: 'users',
+           attributes: {
+             name: user.name,
+             email: user.email,
+             createdAt: user.createdAt
+           },
+           relationships: {
+             posts: {
+               links: {
+                 related: `/api/users/${user.id}/posts`
+               }
+             }
+           }
+         }
+       })
+     }
+   }
+   ```
+
+3. Pagination, filtrage et tri
+   ```ts
+   // Service de pagination générique
+   export class PaginationService {
+     /**
+      * Génère une pagination pour les ressources
+      */
+     async paginate<T>(
+       query: any,
+       options: {
+         page?: number
+         limit?: number
+         sortBy?: string
+         sortDirection?: 'asc' | 'desc'
+         includes?: string[]
+       }
+     ) {
+       const {
+         page = 1,
+         limit = 20,
+         sortBy = 'createdAt',
+         sortDirection = 'desc',
+         includes = []
+       } = options
+       
+       // Calculer l'offset
+       const offset = (page - 1) * limit
+       
+       // Construire la requête avec tri
+       const queryBuilder = query
+         .orderBy(sortBy, sortDirection)
+         .offset(offset)
+         .limit(limit)
+       
+       // Ajouter les relations à inclure
+       includes.forEach(include => {
+         queryBuilder.preload(include)
+       })
+       
+       // Exécuter la requête
+       const data = await queryBuilder.exec()
+       
+       // Obtenir le compte total
+       const total = await query.clone().count('* as total')
+       const totalPages = Math.ceil(total[0].total / limit)
+       
+       return {
+         data,
+         meta: {
+           total: total[0].total,
+           page,
+           limit,
+           totalPages
+         }
+       }
+     }
+   }
+   
+   // Utilisation dans un contrôleur
+   public async index({ request, response }: HttpContextContract) {
+     const page = request.input('page', 1)
+     const limit = request.input('limit', 20)
+     const sortBy = request.input('sort', 'createdAt')
+     const sortDirection = request.input('order', 'desc')
+     const search = request.input('search', '')
+     const status = request.input('status')
+     
+     // Construire la requête de base
+     let query = User.query()
+     
+     // Ajouter les filtres conditionnels
+     if (search) {
+       query = query.where(q => {
+         q.whereILike('name', `%${search}%`)
+          .orWhereILike('email', `%${search}%`)
+       })
+     }
+     
+     if (status) {
+       query = query.where('status', status)
+     }
+     
+     // Paginer les résultats
+     const paginationService = new PaginationService()
+     const result = await paginationService.paginate(query, {
+       page,
+       limit,
+       sortBy,
+       sortDirection: sortDirection as 'asc' | 'desc',
+       includes: ['profile']
+     })
+     
+     // Renvoyer la réponse formatée
+     return response.ok(result)
+   }
+   ```
+
+## Stratégies d'authentification
+
+1. Authentification par token JWT
+   ```ts
+   // app/services/auth.service.ts
+   import jwt from 'jsonwebtoken'
+   
+   export class AuthService {
+     private readonly SECRET_KEY = process.env.JWT_SECRET || 'dev-secret'
+     private readonly TOKEN_EXPIRY = '1h'
+     private readonly REFRESH_TOKEN_EXPIRY = '7d'
+     
+     /**
+      * Générer un token JWT
+      */
+     generateToken(user: User) {
+       // Charger uniquement les données nécessaires
+       const payload = {
+         sub: user.id,
+         email: user.email,
+         role: user.role
+       }
+       
+       return jwt.sign(payload, this.SECRET_KEY, {
+         expiresIn: this.TOKEN_EXPIRY
+       })
+     }
+     
+     /**
+      * Générer un refresh token
+      */
+     generateRefreshToken(user: User) {
+       const payload = {
+         sub: user.id,
+         type: 'refresh'
+       }
+       
+       return jwt.sign(payload, this.SECRET_KEY, {
+         expiresIn: this.REFRESH_TOKEN_EXPIRY
+       })
+     }
+     
+     /**
+      * Vérifier un token JWT
+      */
+     verifyToken(token: string) {
+       try {
+         return jwt.verify(token, this.SECRET_KEY)
+       } catch (error) {
+         throw new Error('Invalid token')
+       }
+     }
+     
+     /**
+      * Rafraîchir un token expiré avec un refresh token
+      */
+     async refreshToken(refreshToken: string) {
+       try {
+         const payload = this.verifyToken(refreshToken) as any
+         
+         // Vérifier que c'est bien un refresh token
+         if (payload.type !== 'refresh') {
+           throw new Error('Invalid refresh token')
+         }
+         
+         // Récupérer l'utilisateur
+         const user = await User.findOrFail(payload.sub)
+         
+         // Générer un nouveau token
+         return {
+           token: this.generateToken(user),
+           refreshToken: this.generateRefreshToken(user)
+         }
+       } catch (error) {
+         throw new Error('Invalid refresh token')
+       }
+     }
+   }
+   ```
+
+2. Middleware d'authentification
+   ```ts
+   // app/middleware/auth.middleware.ts
+   import { HttpContextContract } from '@ioc:Adonis/Core/HttpContext'
+   import { AuthService } from 'App/Services/AuthService'
+   
+   export default class AuthMiddleware {
+     public async handle(
+       { request, response }: HttpContextContract,
+       next: () => Promise<void>,
+       guards?: string[]
+     ) {
+       try {
+         // Récupérer le token depuis l'en-tête Authorization
+         const authHeader = request.header('Authorization')
+         
+         if (!authHeader || !authHeader.startsWith('Bearer ')) {
+           return response.unauthorized({
+             error: {
+               code: 'UNAUTHORIZED',
+               message: 'Authentication required'
+             }
+           })
+         }
+         
+         const token = authHeader.substring(7)
+         const authService = new AuthService()
+         
+         // Vérifier le token
+         const payload = authService.verifyToken(token) as any
+         
+         // Vérifier les rôles si spécifiés
+         if (guards && guards.length > 0) {
+           if (!payload.role || !guards.includes(payload.role)) {
+             return response.forbidden({
+               error: {
+                 code: 'FORBIDDEN',
+                 message: 'Insufficient permissions'
+               }
+             })
+           }
+         }
+         
+         // Attacher les données utilisateur à la requête
+         request.user = payload
+         
+         await next()
+       } catch (error) {
+         return response.unauthorized({
+           error: {
+             code: 'UNAUTHORIZED',
+             message: 'Invalid or expired token'
+           }
+         })
+       }
+     }
+   }
+   ```
+
+3. Endpoints d'authentification
+   ```ts
+   // app/controllers/auth.controller.ts
+   import { HttpContextContract } from '@ioc:Adonis/Core/HttpContext'
+   import { AuthService } from 'App/Services/AuthService'
+   import User from 'App/Models/User'
+   import Hash from '@ioc:Adonis/Core/Hash'
+   
+   export default class AuthController {
+     private authService = new AuthService()
+     
+     /**
+      * Connexion utilisateur
+      */
+     public async login({ request, response }: HttpContextContract) {
+       const { email, password } = request.only(['email', 'password'])
+       
+       try {
+         // Trouver l'utilisateur
+         const user = await User.query()
+           .where('email', email)
+           .firstOrFail()
+         
+         // Vérifier le mot de passe
+         const isValid = await Hash.verify(user.password, password)
+         
+         if (!isValid) {
+           return response.unauthorized({
+             error: {
+               code: 'INVALID_CREDENTIALS',
+               message: 'Invalid email or password'
+             }
+           })
+         }
+         
+         // Générer les tokens
+         const token = this.authService.generateToken(user)
+         const refreshToken = this.authService.generateRefreshToken(user)
+         
+         return response.ok({
+           data: {
+             user: {
+               id: user.id,
+               email: user.email,
+               name: user.name
+             },
+             token,
+             refreshToken
+           }
+         })
+       } catch (error) {
+         return response.unauthorized({
+           error: {
+             code: 'INVALID_CREDENTIALS',
+             message: 'Invalid email or password'
+           }
+         })
+       }
+     }
+     
+     /**
+      * Rafraîchir un token
+      */
+     public async refresh({ request, response }: HttpContextContract) {
+       const { refreshToken } = request.only(['refreshToken'])
+       
+       try {
+         const tokens = await this.authService.refreshToken(refreshToken)
+         
+         return response.ok({
+           data: tokens
+         })
+       } catch (error) {
+         return response.unauthorized({
+           error: {
+             code: 'INVALID_REFRESH_TOKEN',
+             message: 'Invalid or expired refresh token'
+           }
+         })
+       }
+     }
+   }
+   ```
+
+## Documentation API
+
+1. Swagger/OpenAPI avec AdonisJS
+   ```ts
+   // Utiliser @japa/openapi pour générer la doc
+   // config/swagger.ts
+   import { SwaggerConfig } from '@ioc:Adonis/Addons/Swagger'
+   
+   export default {
+     path: __dirname + '/../',
+     title: 'API Documentation',
+     version: '1.0.0',
+     tagIndex: 2,
+     ignore: ['/swagger', '/docs'],
+     common: {
+       parameters: {},
+       responses: {
+         '401': {
+           description: 'Unauthorized',
+           content: {
+             'application/json': {
+               schema: {
+                 type: 'object',
+                 properties: {
+                   error: {
+                     type: 'object',
+                     properties: {
+                       code: { type: 'string', example: 'UNAUTHORIZED' },
+                       message: { type: 'string', example: 'Authentication required' }
+                     }
+                   }
+                 }
+               }
+             }
+           }
+         },
+         '404': {
+           description: 'Resource not found',
+           content: {
+             'application/json': {
+               schema: {
+                 type: 'object',
+                 properties: {
+                   error: {
+                     type: 'object',
+                     properties: {
+                       code: { type: 'string', example: 'RESOURCE_NOT_FOUND' },
+                       message: { type: 'string', example: 'Resource not found' }
+                     }
+                   }
+                 }
+               }
+             }
+           }
+         }
+       }
+     }
+   } as SwaggerConfig
+   ```
+
+2. Documentation des endpoints
+   ```ts
+   // app/controllers/users.controller.ts
+   import { HttpContextContract } from '@ioc:Adonis/Core/HttpContext'
+   
+   /**
+    * @swagger
+    * /api/users:
+    *   get:
+    *     tags:
+    *       - Users
+    *     summary: Get all users
+    *     description: Retrieve a list of users with pagination
+    *     parameters:
+    *       - name: page
+    *         in: query
+    *         schema:
+    *           type: integer
+    *           default: 1
+    *         description: Page number
+    *       - name: limit
+    *         in: query
+    *         schema:
+    *           type: integer
+    *           default: 20
+    *         description: Number of items per page
+    *       - name: sort
+    *         in: query
+    *         schema:
+    *           type: string
+    *           default: createdAt
+    *         description: Field to sort by
+    *       - name: order
+    *         in: query
+    *         schema:
+    *           type: string
+    *           enum: [asc, desc]
+    *           default: desc
+    *         description: Sort direction
+    *     responses:
+    *       200:
+    *         description: Successful response
+    *         content:
+    *           application/json:
+    *             schema:
+    *               type: object
+    *               properties:
+    *                 data:
+    *                   type: array
+    *                   items:
+    *                     $ref: '#/components/schemas/User'
+    *                 meta:
+    *                   $ref: '#/components/schemas/PaginationMeta'
+    *       401:
+    *         $ref: '#/components/responses/401'
+    */
+   export default class UsersController {
+     public async index({ request, response }: HttpContextContract) {
+       // Implémentation...
+     }
+     
+     /**
+      * @swagger
+      * /api/users/{id}:
+      *   get:
+      *     tags:
+      *       - Users
+      *     summary: Get a user
+      *     description: Retrieve a user by ID
+      *     parameters:
+      *       - name: id
+      *         in: path
+      *         required: true
+      *         schema:
+      *           type: string
+      *         description: User ID
+      *     responses:
+      *       200:
+      *         description: Successful response
+      *         content:
+      *           application/json:
+      *             schema:
+      *               type: object
+      *               properties:
+      *                 data:
+      *                   $ref: '#/components/schemas/User'
+      *       404:
+      *         $ref: '#/components/responses/404'
+      */
+     public async show({ params, response }: HttpContextContract) {
+       // Implémentation...
+     }
+   }
+   ```
+
+3. Modèles de schéma
+   ```ts
+   // Types/documention partielle pour Swagger
+   
+   /**
+    * @swagger
+    * components:
+    *   schemas:
+    *     User:
+    *       type: object
+    *       properties:
+    *         id:
+    *           type: string
+    *           format: uuid
+    *         name:
+    *           type: string
+    *         email:
+    *           type: string
+    *           format: email
+    *         role:
+    *           type: string
+    *           enum: [admin, user]
+    *         createdAt:
+    *           type: string
+    *           format: date-time
+    *         updatedAt:
+    *           type: string
+    *           format: date-time
+    *       required:
+    *         - id
+    *         - name
+    *         - email
+    *         - role
+    *
+    *     PaginationMeta:
+    *       type: object
+    *       properties:
+    *         total:
+    *           type: integer
+    *           description: Total number of items
+    *         page:
+    *           type: integer
+    *           description: Current page number
+    *         limit:
+    *           type: integer
+    *           description: Items per page
+    *         totalPages:
+    *           type: integer
+    *           description: Total number of pages
+    *       required:
+    *         - total
+    *         - page
+    *         - limit
+    *         - totalPages
+    */
+   ```
+
+## Gestion des erreurs
+
+1. Types d'erreurs communs
+   ```ts
+   // app/exceptions/api-error.ts
+   import { Exception } from '@adonisjs/core/build/standalone'
+   
+   export class ApiError extends Exception {
+     constructor(
+       message: string,
+       status: number = 500,
+       code: string = 'SERVER_ERROR',
+       details: any[] = []
+     ) {
+       super(message, status, code)
+       this.details = details
+     }
+     
+     public details: any[]
+   }
+   
+   export class ValidationError extends ApiError {
+     constructor(message: string, details: any[]) {
+       super(message, 422, 'VALIDATION_ERROR', details)
+     }
+   }
+   
+   export class NotFoundError extends ApiError {
+     constructor(resource: string, id?: string) {
+       const message = id
+         ? `${resource} with ID ${id} not found`
+         : `${resource} not found`
+       super(message, 404, 'RESOURCE_NOT_FOUND')
+     }
+   }
+   
+   export class UnauthorizedError extends ApiError {
+     constructor(message: string = 'Authentication required') {
+       super(message, 401, 'UNAUTHORIZED')
+     }
+   }
+   
+   export class ForbiddenError extends ApiError {
+     constructor(message: string = 'Insufficient permissions') {
+       super(message, 403, 'FORBIDDEN')
+     }
+   }
+   ```
+
+2. Handler d'erreur global
+   ```ts
+   // app/exceptions/handler.ts
+   import { HttpContextContract } from '@ioc:Adonis/Core/HttpContext'
+   import Logger from '@ioc:Adonis/Core/Logger'
+   import { ApiError } from './api-error'
+   
+   export default class ExceptionHandler {
+     public async handle(error: any, ctx: HttpContextContract) {
+       // ApiError personnalisée
+       if (error instanceof ApiError) {
+         return ctx.response.status(error.status).json({
+           error: {
+             code: error.code,
+             message: error.message,
+             ...(error.details.length > 0 ? { details: error.details } : {})
+           }
+         })
+       }
+       
+       // Erreur de validation d'AdonisJS
+       if (error.code === 'E_VALIDATION_FAILURE') {
+         return ctx.response.status(422).json({
+           error: {
+             code: 'VALIDATION_ERROR',
+             message: 'Validation failed',
+             details: Object.entries(error.messages).map(([field, message]) => ({
+               field,
+               message
+             }))
+           }
+         })
+       }
+       
+       // Erreur de route non trouvée
+       if (error.code === 'E_ROUTE_NOT_FOUND') {
+         return ctx.response.status(404).json({
+           error: {
+             code: 'ROUTE_NOT_FOUND',
+             message: 'Endpoint not found'
+           }
+         })
+       }
+       
+       // Erreur générique
+       Logger.error(error)
+       
+       // En production, masquer les détails
+       const isDev = process.env.NODE_ENV === 'development'
+       
+       return ctx.response.status(500).json({
+         error: {
+           code: 'SERVER_ERROR',
+           message: 'An unexpected error occurred',
+           ...(isDev ? { 
+             details: error.message,
+             stack: error.stack
+           } : {})
+         }
+       })
+     }
+   }
+   ```
+
+3. Utilisation dans les services
+   ```ts
+   // app/services/user.service.ts
+   import { NotFoundError, ValidationError } from 'App/Exceptions/ApiError'
+   
+   export class UserService {
+     async getUserById(id: string) {
+       const user = await User.find(id)
+       
+       if (!user) {
+         throw new NotFoundError('User', id)
+       }
+       
+       return user
+     }
+     
+     async createUser(data: any) {
+       // Validation personnalisée
+       const errors = []
+       
+       if (await User.findBy('email', data.email)) {
+         errors.push({
+           field: 'email',
+           message: 'Email already in use'
+         })
+       }
+       
+       if (errors.length > 0) {
+         throw new ValidationError('Validation failed', errors)
+       }
+       
+       // Créer l'utilisateur
+       return await User.create(data)
+     }
+   }
+   ```
+
+## Performances et optimisation
+
+1. Mise en cache des réponses
+   ```ts
+   // app/middleware/cache.middleware.ts
+   import { HttpContextContract } from '@ioc:Adonis/Core/HttpContext'
+   import Redis from '@ioc:Adonis/Addons/Redis'
+   
+   export default class CacheMiddleware {
+     public async handle(
+       { request, response }: HttpContextContract,
+       next: () => Promise<void>,
+       options: { duration?: number, prefix?: string } = {}
+     ) {
+       // Ne pas mettre en cache si c'est une méthode autre que GET
+       if (request.method() !== 'GET') {
+         return next()
+       }
+       
+       const { duration = 300, prefix = 'api:cache:' } = options
+       
+       // Générer une clé de cache basée sur l'URL et les paramètres
+       const cacheKey = `${prefix}${request.url(true)}`
+       
+       // Vérifier si la réponse est déjà en cache
+       const cachedResponse = await Redis.get(cacheKey)
+       
+       if (cachedResponse) {
+         // Renvoyer la réponse en cache
+         response.header('X-Cache', 'HIT')
+         return response.json(JSON.parse(cachedResponse))
+       }
+       
+       // Passer au middleware suivant
+       response.header('X-Cache', 'MISS')
+       
+       // Stocker la méthode originale json
+       const originalJson = response.json
+       
+       // Remplacer la méthode json pour capturer la réponse
+       response.json = function (body) {
+         // Mettre en cache la réponse
+         Redis.setex(cacheKey, duration, JSON.stringify(body))
+         
+         // Appeler la méthode originale
+         return originalJson.call(this, body)
+       }
+       
+       await next()
+     }
+   }
+   
+   // Utilisation dans les routes
+   Route.get('/api/products', 'ProductsController.index')
+     .middleware(['cache:600,api:products:']) // Cache de 10 minutes
+   ```
+
+2. Compression des réponses
+   ```ts
+   // config/app.ts
+   export const http = {
+     trustProxy: process.env.NODE_ENV === 'production',
+     
+     // Autres options...
+     
+     // Compression
+     useCompression: true,
+     compression: {
+       // Options de compression
+       threshold: 1024, // Seuil minimal en octets
+     }
+   }
+   ```
+
+3. Optimisation des requêtes de base de données
+   ```ts
+   // app/services/product.service.ts
+   
+   export class ProductService {
+     /**
+      * Récupérer les produits avec des statistiques
+      */
+     async getProductsWithStats() {
+       // ❌ Approche inefficace avec N+1 requêtes
+       const products = await Product.all()
+       
+       for (const product of products) {
+         // Pour chaque produit, une requête supplémentaire
+         product.reviewCount = await product.related('reviews').query().count('* as count')
+         product.averageRating = await product.related('reviews').query().avg('rating as average')
+       }
+       
+       // ✅ Optimisé avec des requêtes efficaces
+       const products = await Product.query()
+         .select('products.*')
+         .withCount('reviews as reviewCount')
+         .withAggregate('reviews', (query) => {
+           query.avg('rating').as('averageRating')
+         })
+         .preload('category')
+         .preload('tags')
+       
+       return products
+     }
+     
+     /**
+      * Recherche avec optimisation
+      */
+     async searchProducts(term: string) {
+       // Utiliser Prisma pour des recherches optimisées
+       return await prisma.product.findMany({
+         where: {
+           OR: [
+             { name: { contains: term, mode: 'insensitive' } },
+             { description: { contains: term, mode: 'insensitive' } },
+             { 
+               tags: {
+                 some: {
+                   name: { contains: term, mode: 'insensitive' }
+                 }
+               }
+             }
+           ]
+         },
+         include: {
+           category: true,
+           tags: true
+         },
+         take: 20
+       })
+     }
+   }
+   ```
+
+## Sécurité
+
+1. Protection CORS
+   ```ts
+   // config/cors.ts
+   export default {
+     enabled: true,
+     
+     // Domaines autorisés
+     origin: ['https://example.com', 'https://admin.example.com'],
+     
+     // Méthodes autorisées
+     methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
+     
+     // En-têtes autorisés 
+     headers: true,
+     
+     // En-têtes exposés
+     exposeHeaders: [
+       'cache-control',
+       'content-language',
+       'content-type',
+       'expires',
+       'last-modified',
+       'pragma'
+     ],
+     
+     // Autoriser les cookies
+     credentials: true,
+     
+     // Durée de mise en cache des préflight
+     maxAge: 90
+   }
+   ```
+
+2. Protection contre les attaques par force brute
+   ```ts
+   // app/middleware/rate-limiter.middleware.ts
+   import { HttpContextContract } from '@ioc:Adonis/Core/HttpContext'
+   import Redis from '@ioc:Adonis/Addons/Redis'
+   
+   export default class RateLimiterMiddleware {
+     public async handle(
+       { request, response }: HttpContextContract,
+       next: () => Promise<void>,
+       options: { max?: number, duration?: number, headers?: boolean } = {}
+     ) {
+       const { 
+         max = 60, // Nombre maximum de requêtes
+         duration = 60, // Période en secondes
+         headers = true // Inclure les en-têtes
+       } = options
+       
+       // Utiliser l'IP comme identifiant (peut être remplacé par l'ID utilisateur)
+       const identifier = request.ip()
+       const key = `rate_limit:${identifier}`
+       
+       // Incrémenter le compteur
+       const current = await Redis.incr(key)
+       
+       // Définir une expiration si c'est la première requête
+       if (current === 1) {
+         await Redis.expire(key, duration)
+       }
+       
+       // Temps restant
+       const ttl = await Redis.ttl(key)
+       
+       // Ajouter les en-têtes si activé
+       if (headers) {
+         response.header('X-RateLimit-Limit', String(max))
+         response.header('X-RateLimit-Remaining', String(Math.max(0, max - current)))
+         
+         if (ttl > 0) {
+           response.header('X-RateLimit-Reset', String(Math.floor(Date.now() / 1000) + ttl))
+         }
+       }
+       
+       // Vérifier si la limite est dépassée
+       if (current > max) {
+         return response.tooManyRequests({
+           error: {
+             code: 'RATE_LIMIT_EXCEEDED',
+             message: 'Too many requests, please try again later',
+             details: {
+               retryAfter: ttl
+             }
+           }
+         })
+       }
+       
+       await next()
+     }
+   }
+   
+   // Utilisation dans les routes
+   Route.post('/api/auth/login', 'AuthController.login')
+     .middleware(['rateLimiter:5,60']) // 5 tentatives par minute
+   ```
+
+3. Protection contre les attaques CSRF
+   ```ts
+   // config/shield.ts
+   export default {
+     csrf: {
+       enabled: true,
+       exceptRoutes: [
+         // Routes d'API qui n'ont pas besoin de protection CSRF
+         '/api/*'
+       ],
+       enableXsrfCookie: true,
+       methods: ['POST', 'PUT', 'PATCH', 'DELETE']
+     },
+     
+     // Autres protections...
+     contentTypeSniffing: true,
+     xss: true
+   }
+   ```
+
+4. Validation des entrées
+   ```ts
+   // app/validators/user.validator.ts
+   import { schema, rules } from '@ioc:Adonis/Core/Validator'
+   
+   export const createUserValidator = {
+     schema: schema.create({
+       name: schema.string({ trim: true }, [
+         rules.required(),
+         rules.minLength(2),
+         rules.maxLength(100)
+       ]),
+       
+       email: schema.string({ trim: true }, [
+         rules.required(),
+         rules.email(),
+         rules.unique({ table: 'users', column: 'email' })
+       ]),
+       
+       password: schema.string({}, [
+         rules.required(),
+         rules.minLength(8),
+         // Vérification de la complexité
+         rules.regex(/^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)(?=.*[@$!%*?&])[A-Za-z\d@$!%*?&]+$/),
+         rules.confirmed('passwordConfirmation')
+       ])
+     }),
+     
+     messages: {
+       'name.required': 'Name is required',
+       'name.minLength': 'Name must be at least 2 characters',
+       'email.required': 'Email is required',
+       'email.email': 'Invalid email format',
+       'email.unique': 'Email is already in use',
+       'password.required': 'Password is required',
+       'password.minLength': 'Password must be at least 8 characters',
+       'password.regex': 'Password must include uppercase, lowercase, number, and special character',
+       'password.confirmed': 'Passwords do not match'
+     }
+   }
+   ```
+
+## Versionnement de l'API
+
+1. Structure de répertoire pour les versions
+   ```
+   /app/controllers
+   ├── v1/
+   │   ├── users.controller.ts
+   │   ├── posts.controller.ts
+   │   └── ...
+   ├── v2/
+   │   ├── users.controller.ts
+   │   ├── posts.controller.ts
+   │   └── ...
+   ```
+
+2. Routes avec préfixe de version
+   ```ts
+   // start/routes/v1.ts
+   import Route from '@ioc:Adonis/Core/Route'
+   
+   Route.group(() => {
+     Route.resource('users', 'v1/UsersController').apiOnly()
+     Route.resource('posts', 'v1/PostsController').apiOnly()
+     // Autres routes v1...
+   }).prefix('/api/v1')
+   
+   // start/routes/v2.ts
+   import Route from '@ioc:Adonis/Core/Route'
+   
+   Route.group(() => {
+     Route.resource('users', 'v2/UsersController').apiOnly()
+     Route.resource('posts', 'v2/PostsController').apiOnly()
+     // Autres routes v2...
+   }).prefix('/api/v2')
+   ```
+
+3. Gestion des versions dans les en-têtes
+   ```ts
+   // app/middleware/api-version.middleware.ts
+   import { HttpContextContract } from '@ioc:Adonis/Core/HttpContext'
+   
+   export default class ApiVersionMiddleware {
+     public async handle(
+       { request, response }: HttpContextContract,
+       next: () => Promise<void>
+     ) {
+       // Version par défaut
+       let version = 'v1'
+       
+       // Vérifier l'en-tête de version
+       const headerVersion = request.header('Accept-Version')
+       
+       if (headerVersion) {
+         // Format attendu: "v1", "v2", etc.
+         version = headerVersion
+       }
+       
+       // Ajouter la version à l'objet de requête
+       request.apiVersion = version
+       
+       // Ajouter l'en-tête de version à la réponse
+       response.header('API-Version', version)
+       
+       await next()
+     }
+   }
+   
+   // Utilisation
+   // start/kernel.ts
+   Server.middleware.register([
+     () => import('@ioc:Adonis/Core/BodyParser'),
+     () => import('App/Middleware/ApiVersionMiddleware')
+   ])
+   
+   // Dans le contrôleur
+   public async index({ request, response }: HttpContextContract) {
+     const apiVersion = request.apiVersion
+     
+     // Adapter la réponse en fonction de la version
+     if (apiVersion === 'v1') {
+       // Format de réponse v1
+     } else if (apiVersion === 'v2') {
+       // Format de réponse v2 avec champs supplémentaires
+     }
+     
+     // ...
+   }
+   ```
