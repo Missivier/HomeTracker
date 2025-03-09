@@ -51,14 +51,19 @@
     "typescript": "~5.7"
   },
   "dependencies": {
-    "@adonisjs/auth": "^9.3.1",
+    "@adonisjs/auth": "^9.3.2",
     "@adonisjs/core": "^6.17.2",
     "@adonisjs/cors": "^2.2.1",
+    "@adonisjs/drive-s3": "^1.3.3",
     "@adonisjs/lucid": "^21.6.0",
+    "@adonisjs/mail": "^9.2.2",
+    "@adonisjs/validator": "^13.0.2",
+    "@adonisjs/websocket": "^1.0.12",
     "@vinejs/vine": "^3.0.0",
     "luxon": "^3.5.0",
     "pg": "^8.13.3",
-    "reflect-metadata": "^0.2.2"
+    "reflect-metadata": "^0.2.2",
+    "zod": "^3.24.2"
   },
   "hotHook": {
     "boundaries": [
