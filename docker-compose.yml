@@ -1,0 +1,61 @@
+version: "3.9"
+
+services:
+  # Service pour l'application Fastify
+  api:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: hometracker-api
+    restart: unless-stopped
+    ports:
+      - "3000:3000"
+    depends_on:
+      - postgres
+    environment:
+      - NODE_ENV=production
+      - PORT=3000
+      - DATABASE_URL=postgresql://postgres:password@postgres:5432/fastify_db?schema=public
+    networks:
+      - app-network
+
+  # Service pour la base de données PostgreSQL
+  postgres:
+    image: postgres:15-alpine
+    container_name: hometracker-db
+    restart: unless-stopped
+    ports:
+      - "5432:5432"
+    environment:
+      - POSTGRES_USER=postgres
+      - POSTGRES_PASSWORD=password
+      - POSTGRES_DB=fastify_db
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+    networks:
+      - app-network
+
+  # Service pour administrer la base de données
+  pgadmin:
+    image: dpage/pgadmin4
+    container_name: hometracker-pgadmin
+    restart: unless-stopped
+    ports:
+      - "5050:80"
+    environment:
+      - PGADMIN_DEFAULT_EMAIL=admin@example.com
+      - PGADMIN_DEFAULT_PASSWORD=admin123
+    volumes:
+      - pgadmin-data:/var/lib/pgadmin
+    depends_on:
+      - postgres
+    networks:
+      - app-network
+
+volumes:
+  postgres-data:
+  pgadmin-data:
+
+networks:
+  app-network:
+    driver: bridge
