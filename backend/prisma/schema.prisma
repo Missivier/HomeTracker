@@ -1,0 +1,153 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model Role {
+  id        Int     @id @default(autoincrement()) @map("id_role")
+  name      String  @unique @map("name_role") @db.Char(20)
+  users     User[]
+
+  @@map("roles")
+}
+
+model House {
+  id              Int           @id @default(autoincrement()) @map("id_house")
+  name            String        @unique @map("name_house") @db.Char(64)
+  address         String        @map("adress") @db.Char(255)
+  description     String?       @map("description_house") @db.Char(255)
+  pets            Pet[]
+  calendars       Calendar[]
+  listsTasks      ListTask[]
+  users           User[]
+  budgets         Budget[]
+
+  @@map("houses")
+}
+
+model Pet {
+  id              Int           @id @default(autoincrement()) @map("id_pet")
+  name            String        @map("name_pet") @db.Char(20)
+  birthDate       DateTime?     @map("date_birthday_pet") @db.Date
+  type            String?       @map("type_pet") @db.Char(20)
+  description     String?       @map("description_pet") @db.Char(255)
+  houseId         Int           @map("id_house")
+  house           House         @relation(fields: [houseId], references: [id])
+
+  @@map("pets")
+}
+
+model Calendar {
+  id              Int           @id @default(autoincrement()) @map("id_calendar")
+  name            String        @unique @map("name_calendar") @db.Char(20)
+  houseId         Int           @map("id_house")
+  house           House         @relation(fields: [houseId], references: [id])
+  events          EventCalendar[]
+
+  @@map("calendars")
+}
+
+model ListTask {
+  id              Int           @id @default(autoincrement()) @map("id_list_task")
+  name            String        @unique @map("name_list_task") @db.Char(20)
+  houseId         Int           @map("id_house")
+  house           House         @relation(fields: [houseId], references: [id])
+  tasks           TasksList[]
+
+  @@map("lists_tasks")
+}
+
+model Status {
+  id              Int           @id @default(autoincrement()) @map("id_status")
+  name            String        @unique @map("name_status") @db.Char(20)
+  events          Event[]
+  budgets         Budget[]
+  tasks           Task[]
+
+  @@map("status")
+}
+
+model User {
+  id              Int           @id @default(autoincrement()) @map("id_user")
+  lastName        String        @map("name_user") @db.Char(20)
+  firstName       String        @map("first_name_user") @db.Char(20)
+  username        String?       @map("username_user") @db.Char(20)
+  phone           String?       @unique @map("phone_user") @db.Char(10)
+  password        String        @unique @map("pwd_user") @db.Char(255)
+  birthDate       DateTime?     @map("date_birthday_user") @db.Date
+  email           String        @unique @map("email_user") @db.Char(50)
+  inscriptionDate DateTime?     @map("date_inscription") @db.Date
+  description     String?       @map("description_user") @db.Char(255)
+  roleId          Int           @map("id_role")
+  houseId         Int?          @map("id_house")
+  role            Role          @relation(fields: [roleId], references: [id])
+  house           House?        @relation(fields: [houseId], references: [id])
+
+  @@map("users")
+}
+
+model Event {
+  id              Int           @id @default(autoincrement()) @map("id_event")
+  name            String        @map("name_event") @db.Char(20)
+  startDate       DateTime      @map("start_date") @db.Date
+  endDate         DateTime      @map("end_date") @db.Date
+  type            String?       @unique @map("type_event") @db.Char(20)
+  description     String?       @map("description_event") @db.Char(255)
+  statusId        Int           @map("id_status")
+  status          Status        @relation(fields: [statusId], references: [id])
+  calendars       EventCalendar[]
+
+  @@map("events")
+}
+
+model Budget {
+  id              Int           @id @default(autoincrement()) @map("id_budget")
+  name            String        @unique @map("name_budget") @db.Char(20)
+  startAmount     Int           @map("start_amount_budget") @db.SmallInt
+  endAmount       Int           @map("end_amount_budget") @db.SmallInt
+  creationDate    DateTime      @unique @map("date_creation_budget") @db.Date
+  statusId        Int           @map("id_status")
+  houseId         Int           @map("id_house")
+  status          Status        @relation(fields: [statusId], references: [id])
+  house           House         @relation(fields: [houseId], references: [id])
+
+  @@map("budgets")
+}
+
+model Task {
+  id              Int           @id @default(autoincrement()) @map("id_task")
+  name            String        @map("name_task") @db.Char(50)
+  creationDate    DateTime      @unique @map("date_creation_task") @db.Date
+  description     String?       @map("description_task") @db.Char(255)
+  statusId        Int           @map("id_status")
+  status          Status        @relation(fields: [statusId], references: [id])
+  listsTasks      TasksList[]
+
+  @@map("tasks")
+}
+
+// Table de relation many-to-many entre ListTask et Task
+model TasksList {
+  listTaskId      Int           @map("id_list_task")
+  taskId          Int           @map("id_task")
+  listTask        ListTask      @relation(fields: [listTaskId], references: [id])
+  task            Task          @relation(fields: [taskId], references: [id])
+
+  @@id([listTaskId, taskId])
+  @@map("Appartenir")
+}
+
+// Table de relation many-to-many entre Calendar et Event
+model EventCalendar {
+  calendarId      Int           @map("id_calendar")
+  eventId         Int           @map("id_event")
+  calendar        Calendar      @relation(fields: [calendarId], references: [id])
+  event           Event         @relation(fields: [eventId], references: [id])
+
+  @@id([calendarId, eventId])
+  @@map("affecter")
+}
