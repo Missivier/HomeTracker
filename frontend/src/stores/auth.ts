@@ -93,6 +93,10 @@ export const useAuthStore = defineStore("auth", () => {
     lastName: string;
     email: string;
     password: string;
+    username?: string;
+    phone?: string;
+    birthDate?: string;
+    description?: string;
   }) {
     isLoading.value = true;
     error.value = null;
