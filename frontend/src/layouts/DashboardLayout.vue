@@ -1,15 +1,19 @@
-<template>
-  <div class="min-h-screen bg-gray-50 flex">
-    <div class="flex-1 flex flex-col overflow-hidden">
-      <Navbar />
+<script setup>
+import Navbar from "../components/Navbar.vue";
+import Sidebar from "../components/Sidebar.vue";
+</script>
 
-      <main class="flex-1 overflow-x-hidden overflow-y-auto p-6">
-        <router-view />
+<template>
+  <div class="flex h-screen bg-background dark:bg-background-dark">
+    <!-- Sidebar -->
+    <Sidebar />
+
+    <!-- Contenu principal -->
+    <div class="flex flex-col flex-1">
+      <Navbar />
+      <main class="p-4">
+        <slot />
       </main>
     </div>
   </div>
 </template>
-
-<script setup lang="ts">
-import Navbar from "../components/Navbar.vue";
-</script>

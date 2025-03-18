@@ -12,12 +12,21 @@ interface CreateUserBody {
   email: string;
   password: string;
   roleId: number;
+  username?: string;
+  phone?: string;
+  birthDate?: string;
+  description?: string;
 }
 
 interface UpdateUserBody {
   lastName?: string;
   firstName?: string;
   email?: string;
+  username?: string;
+  phone?: string;
+  birthDate?: string;
+  description?: string;
+  houseId?: number;
 }
 
 const UserController = {
@@ -114,15 +123,43 @@ const UserController = {
     reply: FastifyReply
   ) {
     try {
-      const { lastName, firstName, email, password, roleId } = request.body;
+      const {
+        lastName,
+        firstName,
+        email,
+        password,
+        roleId,
+        username,
+        phone,
+        birthDate,
+        description,
+      } = request.body;
 
+      // Vérifier si l'email existe déjà
+      const existingUser = await prisma.user.findFirst({
+        where: { email },
+      });
+
+      if (existingUser) {
+        const response: ApiResponse<null> = {
+          success: false,
+          message: "Cet email est déjà utilisé par un autre compte.",
+        };
+        return reply.code(400).send(response);
+      }
+
+      // Création du nouvel utilisateur
       const newUser = await prisma.user.create({
         data: {
           lastName,
           firstName,
           email,
-          password,
+          password, // Idéalement, hashé avant stockage
           roleId,
+          username,
+          phone,
+          birthDate: birthDate ? new Date(birthDate) : undefined,
+          description,
           inscriptionDate: new Date(),
         },
         select: {
@@ -130,6 +167,12 @@ const UserController = {
           lastName: true,
           firstName: true,
           email: true,
+          username: true,
+          phone: true,
+          birthDate: true,
+          inscriptionDate: true,
+          description: true,
+          roleId: true,
         },
       });
 
@@ -174,7 +217,12 @@ const UserController = {
 
       const updatedUser = await prisma.user.update({
         where: { id: parseInt(id) },
-        data: updateData,
+        data: {
+          ...updateData,
+          birthDate: updateData.birthDate
+            ? new Date(updateData.birthDate)
+            : undefined,
+        },
         select: {
           id: true,
           lastName: true,
@@ -182,6 +230,9 @@ const UserController = {
           email: true,
           username: true,
           phone: true,
+          birthDate: true,
+          description: true,
+          houseId: true,
         },
       });
 

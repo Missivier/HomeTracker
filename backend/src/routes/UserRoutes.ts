@@ -6,27 +6,46 @@ const userSchema = {
   type: "object",
   properties: {
     id: { type: "integer" },
-    name: { type: "string" },
+    lastName: { type: "string" },
+    firstName: { type: "string" },
+    username: { type: "string" },
+    phone: { type: "string" },
     email: { type: "string", format: "email" },
-    createdAt: { type: "string", format: "date-time" },
-    updatedAt: { type: "string", format: "date-time" },
+    birthDate: { type: "string", format: "date-time" },
+    inscriptionDate: { type: "string", format: "date-time" },
+    description: { type: "string" },
+    roleId: { type: "integer" },
+    houseId: { type: "integer" },
   },
 };
 
 const createUserSchema = {
   type: "object",
-  required: ["name", "email"],
+  required: ["lastName", "firstName", "email", "password", "roleId"],
   properties: {
-    name: { type: "string" },
+    lastName: { type: "string" },
+    firstName: { type: "string" },
     email: { type: "string", format: "email" },
+    password: { type: "string", minLength: 8 },
+    username: { type: "string" },
+    phone: { type: "string" },
+    birthDate: { type: "string", format: "date-time" },
+    description: { type: "string" },
+    roleId: { type: "integer" },
   },
 };
 
 const updateUserSchema = {
   type: "object",
   properties: {
-    name: { type: "string" },
+    lastName: { type: "string" },
+    firstName: { type: "string" },
     email: { type: "string", format: "email" },
+    username: { type: "string" },
+    phone: { type: "string" },
+    birthDate: { type: "string", format: "date-time" },
+    description: { type: "string" },
+    houseId: { type: "integer" },
   },
 };
 

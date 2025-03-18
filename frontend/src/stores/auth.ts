@@ -1,65 +1,192 @@
-// src/stores/auth.ts
 import { defineStore } from "pinia";
+import { computed, ref } from "vue";
 
-interface User {
-  id: number;
-  firstName: string;
+export interface User {
+  id: string;
   lastName: string;
+  firstName: string;
+  username?: string;
+  phone?: string;
   email: string;
+  birthDate?: Date;
+  description?: string;
 }
 
-interface AuthState {
-  token: string | null;
-  user: User | null;
-  isAuthenticated: boolean;
+export interface RegisterData {
+  lastName: string;
+  firstName: string;
+  email: string;
+  password: string;
+  username?: string;
+  phone?: string;
+  birthDate?: string;
+  description?: string;
 }
 
-export const useAuthStore = defineStore("auth", {
-  state: (): AuthState => ({
-    token: localStorage.getItem("token"),
-    user: null,
-    isAuthenticated: !!localStorage.getItem("token"),
-  }),
+// URL de l'API backend
+const API_URL = import.meta.env.VITE_API_URL || "http://localhost:3000";
 
-  getters: {
-    getUser: (state) => state.user,
-    isLoggedIn: (state) => state.isAuthenticated,
-  },
+export const useAuthStore = defineStore("auth", () => {
+  // État
+  const user = ref<User | null>(null);
+  const token = ref<string | null>(null);
+  const isLoading = ref(false);
+  const error = ref<string | null>(null);
+  const isAuthenticated = ref(false);
 
-  actions: {
-    async login(email: string) {
-      try {
-        // Ici, vous ferez un appel API réel vers votre backend
-        // Pour le moment, simulons une réponse
-        const response = {
-          token: "fake-jwt-token",
-          user: {
-            id: 1,
-            firstName: "John",
-            lastName: "Doe",
-            email: email,
-          },
+  // Getters
+  const userFullName = computed(() => {
+    if (!user.value) return "";
+    return `${user.value.firstName} ${user.value.lastName}`;
+  });
+
+  // Actions
+  function setUser(newUser: User | null) {
+    user.value = newUser;
+  }
+
+  function setToken(newToken: string | null) {
+    token.value = newToken;
+    if (newToken) {
+      localStorage.setItem("auth_token", newToken);
+    } else {
+      localStorage.removeItem("auth_token");
+    }
+  }
+
+  function setError(message: string | null) {
+    error.value = message;
+  }
+
+  async function register(userData: RegisterData) {
+    isLoading.value = true;
+    error.value = null;
+
+    try {
+      // Préparer les données pour l'API (ajouter roleId requis par le backend)
+      const apiData = {
+        ...userData,
+        roleId: 1, // Utiliser le rôle par défaut (1 = utilisateur standard)
+      };
+
+      // Appel API réel au backend
+      const response = await fetch(`${API_URL}/api/users`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify(apiData),
+      });
+
+      const data = await response.json();
+
+      if (!response.ok) {
+        throw new Error(data.message || "Échec de l'inscription");
+      }
+
+      console.log("Inscription réussie:", data);
+      setUser(data.user);
+      setToken(data.token);
+      isAuthenticated.value = true;
+      return true;
+    } catch (err) {
+      const errorMessage =
+        err instanceof Error
+          ? err.message
+          : "Échec de l'inscription. Veuillez réessayer.";
+      setError(errorMessage);
+      console.error("Erreur d'inscription:", err);
+      return false;
+    } finally {
+      isLoading.value = false;
+    }
+  }
+
+  async function login(email: string, password: string) {
+    isLoading.value = true;
+    error.value = null;
+
+    try {
+      // Simuler un délai de réseau
+      await new Promise((resolve) => setTimeout(resolve, 1000));
+
+      // Vérification simple (pour prototype)
+      if (email && password.length >= 6) {
+        user.value = {
+          id: "1",
+          lastName: "Dupont",
+          firstName: "Jean",
+          email,
         };
+        setUser(user.value);
+        setToken("mock_jwt_token");
+        isAuthenticated.value = true;
 
-        this.token = response.token;
-        this.user = response.user;
-        this.isAuthenticated = true;
+        // Stocker dans localStorage pour la persistance
+        localStorage.setItem("auth_user", JSON.stringify(user.value));
+        localStorage.setItem("is_authenticated", "true");
 
-        localStorage.setItem("token", response.token);
         return true;
-      } catch (error) {
-        this.token = null;
-        this.user = null;
-        this.isAuthenticated = false;
+      } else {
+        error.value = "Identifiants incorrects";
         return false;
       }
-    },
+    } catch (err) {
+      error.value = "Une erreur est survenue lors de la connexion";
+      return false;
+    } finally {
+      isLoading.value = false;
+    }
+  }
 
-    logout() {
-      this.token = null;
-      this.user = null;
-      this.isAuthenticated = false;
-      localStorage.removeItem("token");
-    },
-  },
+  async function logout() {
+    setUser(null);
+    setToken(null);
+    isAuthenticated.value = false;
+
+    // Nettoyer localStorage
+    localStorage.removeItem("auth_user");
+    localStorage.removeItem("is_authenticated");
+
+    return true;
+  }
+
+  // Initialisation - Récupérer le token du localStorage au démarrage
+  function init() {
+    const savedToken = localStorage.getItem("auth_token");
+    const storedUser = localStorage.getItem("auth_user");
+    const storedAuth = localStorage.getItem("is_authenticated");
+
+    if (savedToken) {
+      token.value = savedToken;
+      // Dans un cas réel, vous feriez un appel API pour récupérer les infos utilisateur
+      // fetchUserProfile();
+    }
+
+    if (storedUser && storedAuth === "true") {
+      user.value = JSON.parse(storedUser);
+      isAuthenticated.value = true;
+    }
+  }
+
+  return {
+    // État
+    user,
+    token,
+    isLoading,
+    error,
+    isAuthenticated,
+
+    // Getters
+    userFullName,
+
+    // Actions
+    register,
+    login,
+    logout,
+    setUser,
+    setToken,
+    setError,
+    init,
+  };
 });
