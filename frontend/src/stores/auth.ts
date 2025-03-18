@@ -1,105 +1,65 @@
+// src/stores/auth.ts
 import { defineStore } from "pinia";
-import { computed, ref } from "vue";
 
-export interface User {
-  id: string;
-  name: string;
+interface User {
+  id: number;
+  firstName: string;
+  lastName: string;
   email: string;
 }
 
-export const useAuthStore = defineStore("auth", () => {
-  // État
-  const user = ref<User | null>(null);
-  const token = ref<string | null>(null);
-  const isLoading = ref(false);
-  const error = ref<string | null>(null);
+interface AuthState {
+  token: string | null;
+  user: User | null;
+  isAuthenticated: boolean;
+}
 
-  // Getters
-  const isAuthenticated = computed(() => !!token.value);
-  const userFullName = computed(() => user.value?.name || "");
+export const useAuthStore = defineStore("auth", {
+  state: (): AuthState => ({
+    token: localStorage.getItem("token"),
+    user: null,
+    isAuthenticated: !!localStorage.getItem("token"),
+  }),
 
-  // Actions
-  function setUser(newUser: User | null) {
-    user.value = newUser;
-  }
+  getters: {
+    getUser: (state) => state.user,
+    isLoggedIn: (state) => state.isAuthenticated,
+  },
 
-  function setToken(newToken: string | null) {
-    token.value = newToken;
-    if (newToken) {
-      localStorage.setItem("auth_token", newToken);
-    } else {
-      localStorage.removeItem("auth_token");
-    }
-  }
+  actions: {
+    async login(email: string) {
+      try {
+        // Ici, vous ferez un appel API réel vers votre backend
+        // Pour le moment, simulons une réponse
+        const response = {
+          token: "fake-jwt-token",
+          user: {
+            id: 1,
+            firstName: "John",
+            lastName: "Doe",
+            email: email,
+          },
+        };
 
-  function setError(message: string | null) {
-    error.value = message;
-  }
+        this.token = response.token;
+        this.user = response.user;
+        this.isAuthenticated = true;
 
-  async function login(email: string, _password: string) {
-    isLoading.value = true;
-    error.value = null;
+        localStorage.setItem("token", response.token);
+        return true;
+      } catch (error) {
+        this.token = null;
+        this.user = null;
+        this.isAuthenticated = false;
+        return false;
+      }
+    },
 
-    try {
-      // Simulation d'une requête API
-      await new Promise((resolve) => setTimeout(resolve, 1000));
-
-      // Dans un cas réel, vous feriez un appel API ici
-      // const response = await api.post('/auth/login', { email, password });
-
-      // Données simulées
-      const mockUser: User = {
-        id: "1",
-        name: "Utilisateur Test",
-        email: email,
-      };
-      const mockToken = "mock_jwt_token";
-
-      setUser(mockUser);
-      setToken(mockToken);
-
-      return true;
-    } catch (err) {
-      setError("Échec de la connexion. Veuillez vérifier vos identifiants.");
-      console.error("Erreur de connexion:", err);
-      return false;
-    } finally {
-      isLoading.value = false;
-    }
-  }
-
-  function logout() {
-    setUser(null);
-    setToken(null);
-  }
-
-  // Initialisation - Récupérer le token du localStorage au démarrage
-  function init() {
-    const savedToken = localStorage.getItem("auth_token");
-    if (savedToken) {
-      token.value = savedToken;
-      // Dans un cas réel, vous feriez un appel API pour récupérer les infos utilisateur
-      // fetchUserProfile();
-    }
-  }
-
-  return {
-    // État
-    user,
-    token,
-    isLoading,
-    error,
-
-    // Getters
-    isAuthenticated,
-    userFullName,
-
-    // Actions
-    login,
-    logout,
-    setUser,
-    setToken,
-    setError,
-    init,
-  };
+    logout() {
+      this.token = null;
+      this.user = null;
+      this.isAuthenticated = false;
+      localStorage.removeItem("token");
+    },
+  },
 });

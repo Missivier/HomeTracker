@@ -1,63 +1,51 @@
-import type { RouteRecordRaw } from "vue-router";
 import { createRouter, createWebHistory } from "vue-router";
-import { useAuthStore } from "../stores/auth";
-import Login from "../views/Auth/Login.vue";
-import Register from "../views/Auth/Register.vue";
-import Dashboard from "../views/Dashboard.vue";
+import DashboardView from "../views/Dashboard.vue";
 
-const routes: RouteRecordRaw[] = [
+// Lazy-loading pour les vues d'authentification
+const Login = () => import("../views/Auth/Login.vue");
+const Register = () => import("../views/Auth/Register.vue");
+
+// Layouts
+import AuthLayout from "../layouts/AuthLayout.vue";
+import DashboardLayout from "../layouts/DashboardLayout.vue";
+
+const routes = [
   {
     path: "/",
-    name: "home",
-    component: Login,
+    redirect: "/login",
   },
   {
-    path: "/login",
-    name: "login",
-    component: Login,
-    meta: { requiresGuest: true },
-  },
-  {
-    path: "/register",
-    name: "register",
-    component: Register,
-    meta: { requiresGuest: true },
+    path: "/auth",
+    component: AuthLayout,
+    children: [
+      {
+        path: "login",
+        name: "login",
+        component: Login,
+      },
+      {
+        path: "register",
+        name: "register",
+        component: Register,
+      },
+    ],
   },
   {
     path: "/dashboard",
-    name: "dashboard",
-    component: Dashboard,
-    meta: { requiresAuth: true },
-  },
-  // Route 404
-  {
-    path: "/:pathMatch(.*)*",
-    name: "not-found",
-    redirect: { name: "home" },
+    component: DashboardLayout,
+    children: [
+      {
+        path: "",
+        name: "dashboard",
+        component: DashboardView,
+      },
+    ],
   },
 ];
 
 const router = createRouter({
   history: createWebHistory(),
   routes,
-});
-
-// Navigation guards
-router.beforeEach((to, _, next) => {
-  const authStore = useAuthStore();
-  const requiresAuth = to.matched.some((record) => record.meta.requiresAuth);
-  const requiresGuest = to.matched.some((record) => record.meta.requiresGuest);
-
-  if (requiresAuth && !authStore.isAuthenticated) {
-    // Rediriger vers la page de connexion si l'utilisateur n'est pas authentifié
-    next({ name: "login" });
-  } else if (requiresGuest && authStore.isAuthenticated) {
-    // Rediriger vers le tableau de bord si l'utilisateur est déjà authentifié
-    next({ name: "dashboard" });
-  } else {
-    // Continuer normalement
-    next();
-  }
 });
 
 export default router;

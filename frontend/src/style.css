@@ -16,3 +16,21 @@
   --color-background-dark: oklch(10% 0 0); /* Fond très sombre */
   --color-foreground-dark: oklch(95% 0 0); /* Texte très clair */
 }
+
+@component {
+  .button_primary {
+    @apply bg-primary text-white px-4 py-2 rounded-md;
+  }
+
+  .button_primary:hover {
+    @apply bg-primary-dark;
+  }
+
+  .button_secondary {
+    @apply bg-secondary text-white px-4 py-2 rounded-md;
+  }
+
+  .button_secondary:hover {
+    @apply bg-secondary-dark;
+  }
+}

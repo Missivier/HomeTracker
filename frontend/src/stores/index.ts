@@ -1,13 +1,4 @@
-import { useAuthStore } from "./auth";
+// src/stores/index.ts
+import { createPinia } from "pinia";
 
-/**
- * Initialise tous les stores de l'application
- */
-export function initializeStores() {
-  const authStore = useAuthStore();
-  authStore.init();
-
-  // Initialiser d'autres stores ici si nécessaire
-}
-
-export { useAuthStore };
+export const pinia = createPinia();

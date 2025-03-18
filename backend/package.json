@@ -7,7 +7,7 @@
   "scripts": {
     "build": "rimraf dist && tsc",
     "start": "node dist/server.js",
-    "dev": "ts-node-dev --respawn --transpile-only -r tsconfig-paths/register src/server.ts",
+    "dev": "node --loader ts-node/esm src/server.ts",
     "test": "jest",
     "lint": "eslint . --ext .ts",
     "format": "prettier --write 'src/**/*.ts'",
