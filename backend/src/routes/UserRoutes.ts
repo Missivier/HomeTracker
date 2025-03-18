@@ -8,14 +8,15 @@ const userSchema = {
     id: { type: "integer" },
     lastName: { type: "string" },
     firstName: { type: "string" },
-    username: { type: "string" },
-    phone: { type: "string" },
+    username: { type: ["string", "null"] },
+    phone: { type: ["string", "null"] },
     email: { type: "string", format: "email" },
-    birthDate: { type: "string", format: "date-time" },
-    inscriptionDate: { type: "string", format: "date-time" },
-    description: { type: "string" },
+    birthDate: { type: ["string", "null"], format: "date-time" },
+    inscriptionDate: { type: ["string", "null"], format: "date-time" },
+    description: { type: ["string", "null"] },
     roleId: { type: "integer" },
-    houseId: { type: "integer" },
+    houseId: { type: ["integer", "null"] },
+    token: { type: "string" },
   },
 };
 
@@ -60,7 +61,7 @@ const apiResponseSchema = {
         { type: "null" },
       ],
     },
-    error: { type: "string" },
+    error: { type: ["string", "null"] },
     message: { type: "string" },
   },
 };
@@ -165,10 +166,6 @@ const userRoutes: FastifyPluginAsync = async (
   fastify.post("/register", {
     schema: {
       body: createUserSchema,
-      response: {
-        201: apiResponseSchema,
-        400: apiResponseSchema,
-      },
     },
     handler: UserController.register,
   });

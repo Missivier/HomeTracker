@@ -1,5 +1,6 @@
 import { defineStore } from "pinia";
 import { computed, ref } from "vue";
+import apiService from "../services/api";
 
 export interface User {
   id: number;
@@ -13,7 +14,13 @@ export interface User {
 }
 
 // URL de base de l'API
-const API_BASE_URL = "http://localhost:3000/api";
+const API_BASE_URL =
+  import.meta.env.VITE_API_BASE_URL || "http://localhost:3000/api";
+console.log(
+  "API_BASE_URL (variable d'environnement):",
+  import.meta.env.VITE_API_BASE_URL
+);
+console.log("API_BASE_URL (effective):", API_BASE_URL);
 
 export const useAuthStore = defineStore("auth", () => {
   // État
@@ -52,39 +59,47 @@ export const useAuthStore = defineStore("auth", () => {
     error.value = null;
 
     try {
-      const response = await fetch(`${API_BASE_URL}/users/login`, {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({ email, password }),
-      });
+      console.log("Début de la fonction login");
+      console.log("Email:", email);
 
-      const data = await response.json();
+      const response = await apiService.login(email, password);
+      console.log("Réponse de la connexion:", response);
 
-      if (!response.ok) {
-        throw new Error(data.message || "Échec de la connexion");
-      }
-
-      if (!data.success || !data.data) {
-        throw new Error(data.message || "Données de réponse invalides");
+      if (response.success === false) {
+        throw new Error(response.message || "Données de réponse invalides");
       }
 
       // Stocker le token et les informations utilisateur
-      setUser(data.data);
-      setToken(data.data.token);
-
-      return true;
+      if (response && response.data) {
+        console.log("Données utilisateur reçues:", response.data);
+        setUser(response.data);
+        if (response.data.token) {
+          console.log(
+            "Token reçu:",
+            response.data.token.substring(0, 10) + "..."
+          );
+          setToken(response.data.token);
+        } else {
+          console.warn("Aucun token reçu dans la réponse");
+          throw new Error("Aucun token reçu dans la réponse");
+        }
+        console.log("Connexion réussie");
+        return true;
+      } else {
+        console.error("Données utilisateur manquantes:", response);
+        throw new Error("Données utilisateur manquantes dans la réponse");
+      }
     } catch (err) {
+      console.error("Erreur de connexion:", err);
       const errorMessage =
         err instanceof Error
           ? err.message
           : "Échec de la connexion. Veuillez vérifier vos identifiants.";
       setError(errorMessage);
-      console.error("Erreur de connexion:", err);
       return false;
     } finally {
       isLoading.value = false;
+      console.log("Fin de la fonction login");
     }
   }
 
@@ -102,47 +117,52 @@ export const useAuthStore = defineStore("auth", () => {
     error.value = null;
 
     try {
-      // Nous devons spécifier un roleId pour que l'inscription fonctionne
+      console.log("Début de la fonction register");
+
+      // Définir le roleId par défaut à 1 (rôle "No roles")
       const registerData = {
-        ...userData,
-        roleId: 1, // Rôle par défaut (utilisateur standard)
+        firstName: userData.firstName,
+        lastName: userData.lastName,
+        email: userData.email,
+        password: userData.password,
+        roleId: 1, // Rôle "No roles" par défaut
+        username: userData.username || undefined,
+        phone: userData.phone || undefined,
+        birthDate: userData.birthDate || undefined,
+        description: userData.description || undefined,
       };
 
-      const response = await fetch(`${API_BASE_URL}/users/register`, {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify(registerData),
-      });
+      console.log("Données d'inscription:", JSON.stringify(registerData));
 
-      const data = await response.json();
+      const response = await apiService.register(registerData);
+      console.log("Réponse de l'API:", response);
 
-      if (!response.ok) {
-        throw new Error(data.message || "Échec de l'inscription");
+      // Si le serveur renvoie une erreur
+      if (response.success === false) {
+        throw new Error(response.message || "Échec de l'inscription");
       }
 
-      if (!data.success) {
-        throw new Error(data.message || "Données de réponse invalides");
-      }
-
+      // Si la réponse a un statut de réussite, considérons que l'opération a réussi
+      console.log("Inscription réussie");
       return true;
     } catch (err) {
+      console.error("Erreur inattendue:", err);
       const errorMessage =
         err instanceof Error
           ? err.message
           : "Échec de l'inscription. Veuillez réessayer.";
       setError(errorMessage);
-      console.error("Erreur d'inscription:", err);
       return false;
     } finally {
       isLoading.value = false;
+      console.log("Fin de la fonction register");
     }
   }
 
   function logout() {
     setUser(null);
     setToken(null);
+    apiService.resetCsrfToken(); // Réinitialiser le token CSRF
   }
 
   // Initialisation - Récupérer le token du localStorage au démarrage

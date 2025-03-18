@@ -189,30 +189,52 @@
         <!-- Notification d'erreur -->
         <div
           v-if="error"
-          class="mb-4 text-red-100 text-xs bg-red-600 p-2 rounded-md shadow-md border-l-4 border-red-800 animate-pulse"
+          class="fixed top-4 right-4 bg-red-100 border-l-4 border-red-500 text-red-700 p-4 rounded shadow-md flex items-center max-w-md animate-fadeIn z-50"
+          role="alert"
+          @click="clearError"
         >
-          <div class="flex items-center">
-            <svg
-              xmlns="http://www.w3.org/2000/svg"
-              class="h-4 w-4 mr-1 flex-shrink-0"
-              viewBox="0 0 20 20"
-              fill="currentColor"
+          <svg
+            xmlns="http://www.w3.org/2000/svg"
+            class="h-6 w-6 mr-3 text-red-500"
+            fill="none"
+            viewBox="0 0 24 24"
+            stroke="currentColor"
+          >
+            <path
+              stroke-linecap="round"
+              stroke-linejoin="round"
+              stroke-width="2"
+              d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"
+            />
+          </svg>
+          <div>
+            <span class="font-medium">Erreur: </span>
+            {{ error }}
+
+            <div
+              v-if="error.includes('connecter au serveur')"
+              class="mt-1 text-sm"
             >
-              <path
-                fill-rule="evenodd"
-                d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-7 4a1 1 0 11-2 0 1 1 0 012 0zm-1-9a1 1 0 00-1 1v4a1 1 0 102 0V6a1 1 0 00-1-1z"
-                clip-rule="evenodd"
-              />
-            </svg>
-            <span class="text-sm">{{ error }}</span>
+              <p class="font-bold">Solutions possibles:</p>
+              <ul class="list-disc pl-5 mt-1">
+                <li>Vérifiez que le serveur backend est bien démarré</li>
+                <li>
+                  Vérifiez que l'URL de l'API est correcte dans le fichier .env
+                </li>
+                <li>
+                  Assurez-vous que le serveur backend accepte les connexions
+                  depuis votre frontend
+                </li>
+              </ul>
+            </div>
           </div>
           <button
-            @click="clearError"
-            class="absolute top-1 right-1 text-red-100 hover:text-white cursor-pointer"
+            @click.stop="clearError"
+            class="ml-auto bg-red-200 hover:bg-red-300 rounded-full p-1 transition-colors duration-200"
           >
             <svg
               xmlns="http://www.w3.org/2000/svg"
-              class="h-3 w-3"
+              class="h-4 w-4 text-red-700"
               viewBox="0 0 20 20"
               fill="currentColor"
             >
@@ -228,30 +250,34 @@
         <!-- Notification de succès -->
         <div
           v-if="successMessage"
-          class="mb-4 text-green-100 text-xs bg-green-600 p-2 rounded-md shadow-md border-l-4 border-green-800 animate-pulse"
+          class="fixed top-4 right-4 bg-green-100 border-l-4 border-green-500 text-green-700 p-4 rounded shadow-md flex items-center max-w-md animate-fadeIn z-50"
+          role="alert"
         >
-          <div class="flex items-center">
-            <svg
-              xmlns="http://www.w3.org/2000/svg"
-              class="h-4 w-4 mr-1 flex-shrink-0"
-              viewBox="0 0 20 20"
-              fill="currentColor"
-            >
-              <path
-                fill-rule="evenodd"
-                d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z"
-                clip-rule="evenodd"
-              />
-            </svg>
-            <span class="text-sm">{{ successMessage }}</span>
+          <svg
+            xmlns="http://www.w3.org/2000/svg"
+            class="h-6 w-6 mr-3 text-green-500"
+            fill="none"
+            viewBox="0 0 24 24"
+            stroke="currentColor"
+          >
+            <path
+              stroke-linecap="round"
+              stroke-linejoin="round"
+              stroke-width="2"
+              d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"
+            />
+          </svg>
+          <div>
+            <span class="font-medium">Succès: </span>
+            {{ successMessage }}
           </div>
           <button
             @click="successMessage = ''"
-            class="absolute top-1 right-1 text-green-100 hover:text-white cursor-pointer"
+            class="ml-auto bg-green-200 hover:bg-green-300 rounded-full p-1 transition-colors duration-200"
           >
             <svg
               xmlns="http://www.w3.org/2000/svg"
-              class="h-3 w-3"
+              class="h-4 w-4 text-green-700"
               viewBox="0 0 20 20"
               fill="currentColor"
             >
@@ -268,30 +294,33 @@
       <!-- Notifications pour mobile, plus petites -->
       <div
         v-if="error"
-        class="md:hidden fixed top-2 right-2 text-red-100 text-xs bg-red-600 p-2 rounded-md shadow-md border-l-4 border-red-800 animate-pulse z-50 max-w-[250px]"
+        class="md:hidden fixed top-2 right-2 bg-red-100 border-l-4 border-red-500 text-red-700 p-3 rounded shadow-md flex items-center z-50 max-w-[300px]"
       >
-        <div class="flex items-center">
-          <svg
-            xmlns="http://www.w3.org/2000/svg"
-            class="h-4 w-4 mr-1 flex-shrink-0"
-            viewBox="0 0 20 20"
-            fill="currentColor"
-          >
-            <path
-              fill-rule="evenodd"
-              d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-7 4a1 1 0 11-2 0 1 1 0 012 0zm-1-9a1 1 0 00-1 1v4a1 1 0 102 0V6a1 1 0 00-1-1z"
-              clip-rule="evenodd"
-            />
-          </svg>
-          <span class="text-sm">{{ error }}</span>
+        <svg
+          xmlns="http://www.w3.org/2000/svg"
+          class="h-5 w-5 mr-2 text-red-500 flex-shrink-0"
+          fill="none"
+          viewBox="0 0 24 24"
+          stroke="currentColor"
+        >
+          <path
+            stroke-linecap="round"
+            stroke-linejoin="round"
+            stroke-width="2"
+            d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"
+          />
+        </svg>
+        <div class="text-sm">
+          <span class="font-medium">Erreur: </span>
+          {{ error }}
         </div>
         <button
           @click="clearError"
-          class="absolute top-1 right-1 text-red-100 hover:text-white cursor-pointer"
+          class="ml-auto bg-red-200 hover:bg-red-300 rounded-full p-1 transition-colors duration-200"
         >
           <svg
             xmlns="http://www.w3.org/2000/svg"
-            class="h-3 w-3"
+            class="h-3 w-3 text-red-700"
             viewBox="0 0 20 20"
             fill="currentColor"
           >
@@ -306,30 +335,33 @@
 
       <div
         v-if="successMessage"
-        class="md:hidden fixed top-2 right-2 text-green-100 text-xs bg-green-600 p-2 rounded-md shadow-md border-l-4 border-green-800 animate-pulse z-50 max-w-[250px]"
+        class="md:hidden fixed top-2 right-2 bg-green-100 border-l-4 border-green-500 text-green-700 p-3 rounded shadow-md flex items-center z-50 max-w-[300px]"
       >
-        <div class="flex items-center">
-          <svg
-            xmlns="http://www.w3.org/2000/svg"
-            class="h-4 w-4 mr-1 flex-shrink-0"
-            viewBox="0 0 20 20"
-            fill="currentColor"
-          >
-            <path
-              fill-rule="evenodd"
-              d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z"
-              clip-rule="evenodd"
-            />
-          </svg>
-          <span class="text-sm">{{ successMessage }}</span>
+        <svg
+          xmlns="http://www.w3.org/2000/svg"
+          class="h-5 w-5 mr-2 text-green-500 flex-shrink-0"
+          fill="none"
+          viewBox="0 0 24 24"
+          stroke="currentColor"
+        >
+          <path
+            stroke-linecap="round"
+            stroke-linejoin="round"
+            stroke-width="2"
+            d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"
+          />
+        </svg>
+        <div class="text-sm">
+          <span class="font-medium">Succès: </span>
+          {{ successMessage }}
         </div>
         <button
           @click="successMessage = ''"
-          class="absolute top-1 right-1 text-green-100 hover:text-white cursor-pointer"
+          class="ml-auto bg-green-200 hover:bg-green-300 rounded-full p-1 transition-colors duration-200"
         >
           <svg
             xmlns="http://www.w3.org/2000/svg"
-            class="h-3 w-3"
+            class="h-3 w-3 text-green-700"
             viewBox="0 0 20 20"
             fill="currentColor"
           >
@@ -366,20 +398,52 @@ const error = computed(() => authStore.error);
 
 const handleLogin = async () => {
   if (!email.value || !password.value) {
+    authStore.setError("Veuillez remplir tous les champs");
     return;
   }
 
-  const success = await authStore.login(email.value, password.value);
+  try {
+    console.log("Début de la tentative de connexion");
+    console.log("Email utilisé:", email.value);
+    console.log("Mot de passe fourni:", "********"); // Ne jamais logger les mots de passe réels
 
-  if (success) {
-    // Afficher un message de succès
-    successMessage.value =
-      "Connexion réussie ! Vous allez être redirigé vers votre tableau de bord.";
+    // Ne pas réinitialiser le store avant d'appeler login pour voir l'erreur précédente, si elle existe
+    console.log("Erreur précédente dans le store:", authStore.error);
 
-    // Rediriger vers le tableau de bord après un court délai
-    setTimeout(() => {
-      router.push("/dashboard");
-    }, 1500);
+    const success = await authStore.login(email.value, password.value);
+
+    console.log("Résultat de la tentative de connexion:", success);
+    console.log(
+      "Nouvelle erreur dans le store après tentative:",
+      authStore.error
+    );
+
+    if (success) {
+      // Afficher un message de succès
+      successMessage.value =
+        "Connexion réussie ! Vous allez être redirigé vers votre tableau de bord.";
+      console.log("Redirection vers le dashboard dans 1.5 secondes");
+
+      // Rediriger vers le tableau de bord après un court délai
+      setTimeout(() => {
+        router.push("/dashboard");
+      }, 1500);
+    } else {
+      // Si login retourne false mais ne lance pas d'erreur
+      if (!authStore.error) {
+        console.error(
+          "La connexion a échoué mais aucune erreur n'a été définie"
+        );
+        authStore.setError("Échec de la connexion. Veuillez réessayer.");
+      } else {
+        console.error("Erreur lors de la connexion:", authStore.error);
+      }
+    }
+  } catch (err) {
+    console.error("Exception lors de la connexion:", err);
+    authStore.setError(
+      "Une erreur est survenue. Veuillez réessayer plus tard."
+    );
   }
 };
 

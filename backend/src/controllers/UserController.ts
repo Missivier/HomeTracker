@@ -1,5 +1,6 @@
-import bcryptjs from "bcryptjs";
 import { FastifyReply, FastifyRequest } from "fastify";
+import jwtService from "../services/jwtService.js";
+import passwordService from "../services/passwordService.js";
 import prisma from "../services/prisma.js";
 import { ApiResponse } from "../types/index.js";
 
@@ -308,6 +309,7 @@ const UserController = {
   ) {
     try {
       const { email, password } = request.body;
+      console.log("Tentative de connexion pour l'email:", email);
 
       // Rechercher l'utilisateur par email
       const user = await prisma.user.findUnique({
@@ -329,6 +331,7 @@ const UserController = {
 
       // Vérifier si l'utilisateur existe
       if (!user) {
+        console.log("Utilisateur non trouvé pour l'email:", email);
         const response: ApiResponse<null> = {
           success: false,
           message: "Email ou mot de passe incorrect",
@@ -336,33 +339,59 @@ const UserController = {
         return reply.code(401).send(response);
       }
 
-      // Vérifier le mot de passe avec bcryptjs
-      const passwordMatch = await bcryptjs.compare(password, user.password);
-      if (!passwordMatch) {
+      console.log("Utilisateur trouvé, ID:", user.id, "Rôle:", user.roleId);
+
+      // Vérifier si le mot de passe correspond
+      const passwordMatches = await passwordService.verifyPassword(
+        password,
+        user.password
+      );
+
+      if (!passwordMatches) {
+        console.log("Mot de passe incorrect pour l'utilisateur ID:", user.id);
         const response: ApiResponse<null> = {
           success: false,
           message: "Email ou mot de passe incorrect",
         };
         return reply.code(401).send(response);
       }
+
+      console.log("Mot de passe validé pour l'utilisateur ID:", user.id);
 
       // Utilisateur authentifié avec succès
       // Ne pas renvoyer le mot de passe
       const { password: _, ...userWithoutPassword } = user;
 
-      // Pour une véritable mise en oeuvre, vous devriez générer un JWT ici
-      const token = "jwt_token_" + user.id; // Placeholder, utilisez jsonwebtoken en production
+      // Nettoyer les espaces dans les champs de type string
+      const cleanedUser = Object.fromEntries(
+        Object.entries(userWithoutPassword).map(([key, value]) => {
+          // Si la valeur est une chaîne, supprimer les espaces
+          if (typeof value === "string") {
+            return [key, value.trim()];
+          }
+          // Sinon, conserver la valeur telle quelle
+          return [key, value];
+        })
+      );
 
-      const response: ApiResponse<
-        typeof userWithoutPassword & { token: string }
-      > = {
+      // Générer un token JWT
+      const token = jwtService.generateToken({
+        userId: user.id,
+        roleId: user.roleId,
+        email: user.email.trim(),
+      });
+
+      console.log("Authentification réussie pour l'utilisateur ID:", user.id);
+
+      const response: ApiResponse<typeof cleanedUser & { token: string }> = {
         success: true,
-        data: { ...userWithoutPassword, token },
+        data: { ...cleanedUser, token },
         message: "Authentification réussie",
       };
 
       return reply.code(200).send(response);
     } catch (error) {
+      console.error("Erreur lors de l'authentification:", error);
       const response: ApiResponse<null> = {
         success: false,
         error: error instanceof Error ? error.message : "Erreur inconnue",
@@ -384,7 +413,7 @@ const UserController = {
         firstName,
         email,
         password,
-        roleId,
+        roleId = 1, // Valeur par défaut à 1 (No roles) si non fournie
         username,
         phone,
         birthDate,
@@ -404,9 +433,8 @@ const UserController = {
         return reply.code(400).send(response);
       }
 
-      // Hachage du mot de passe avec bcryptjs
-      const saltRounds = 10;
-      const hashedPassword = await bcryptjs.hash(password, saltRounds);
+      // Hacher le mot de passe avec la nouvelle méthode sécurisée
+      const hashedPassword = await passwordService.hashPassword(password);
 
       // Création du nouvel utilisateur
       const newUser = await prisma.user.create({
@@ -414,8 +442,8 @@ const UserController = {
           lastName,
           firstName,
           email,
-          password: hashedPassword, // Mot de passe haché
-          roleId,
+          password: hashedPassword, // Mot de passe haché avec PBKDF2
+          roleId: roleId || 1, // Assurer qu'un rôle est toujours assigné (No roles = 1)
           username,
           phone,
           birthDate: birthDate ? new Date(birthDate) : undefined,
@@ -436,17 +464,27 @@ const UserController = {
         },
       });
 
-      // Pour une implémentation réelle, vous devriez générer un JWT ici
-      const token = "jwt_token_" + newUser.id; // Placeholder, utilisez jsonwebtoken en production
+      // Générer un token JWT
+      const token = jwtService.generateToken({
+        userId: newUser.id,
+        roleId: newUser.roleId,
+        email: newUser.email,
+      });
 
-      const response: ApiResponse<typeof newUser & { token: string }> = {
+      const userData = {
+        ...newUser,
+        token,
+      };
+
+      const response: ApiResponse<typeof userData> = {
         success: true,
-        data: { ...newUser, token },
+        data: userData,
         message: "Utilisateur créé et authentifié avec succès",
       };
 
       return reply.code(201).send(response);
     } catch (error) {
+      console.error("Erreur d'enregistrement:", error);
       const response: ApiResponse<null> = {
         success: false,
         error: error instanceof Error ? error.message : "Erreur inconnue",
