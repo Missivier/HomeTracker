@@ -1,29 +1,23 @@
 <template>
   <AuthLayout>
-    <div class="w-full max-w-4xl px-4 sm:px-6">
-      <FormCard padding="6" className="w-full backdrop-blur-xl">
-        <h2
-          class="text-2xl font-bold text-center text-gray-800 dark:text-white mb-6"
-        >
-          Créer un compte
-        </h2>
-
-        <form class="space-y-4" @submit.prevent="handleRegister">
-          <div
-            v-if="error"
-            class="text-red-500 text-sm text-center bg-red-900/20 p-3 rounded-md border-l-4 border-red-500 animate-pulse"
+    <div
+      class="w-full max-w-5xl flex items-start justify-center gap-4 px-4 sm:px-6 relative"
+    >
+      <div class="w-full max-w-md">
+        <FormCard padding="6" className="w-full backdrop-blur-xl">
+          <h2
+            class="text-2xl font-bold text-center text-gray-800 dark:text-white mb-6"
           >
-            {{ error }}
-          </div>
+            Créer un compte
+          </h2>
 
-          <!-- Grille responsive à deux colonnes pour les champs du formulaire -->
-          <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+          <form class="space-y-4" @submit.prevent="handleRegister">
             <!-- Prénom -->
             <div class="relative">
               <label
                 for="firstName"
                 class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1"
-                >Prénom</label
+                >Prénom <span class="text-red-500">*</span></label
               >
               <div class="relative group">
                 <div
@@ -59,7 +53,7 @@
               <label
                 for="name"
                 class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1"
-                >Nom</label
+                >Nom <span class="text-red-500">*</span></label
               >
               <div class="relative group">
                 <div
@@ -95,7 +89,7 @@
               <label
                 for="email"
                 class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1"
-                >Email</label
+                >Email <span class="text-red-500">*</span></label
               >
               <div class="relative group">
                 <div
@@ -133,7 +127,7 @@
               <label
                 for="password"
                 class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1"
-                >Mot de passe</label
+                >Mot de passe <span class="text-red-500">*</span></label
               >
               <div class="relative group">
                 <div
@@ -163,172 +157,38 @@
                   placeholder="Votre mot de passe..."
                 />
               </div>
+              <p class="mt-1 text-xs text-gray-500 dark:text-gray-400">
+                Le mot de passe doit contenir au moins 8 caractères
+              </p>
             </div>
 
-            <!-- Nom d'utilisateur -->
-            <div class="relative">
-              <label
-                for="username"
-                class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1"
-                >Nom d'utilisateur (optionnel)</label
-              >
-              <div class="relative group">
-                <div
-                  class="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none"
-                >
-                  <svg
-                    xmlns="http://www.w3.org/2000/svg"
-                    class="h-5 w-5 text-gray-400 transition-all duration-300 group-focus-within:text-primary"
-                    viewBox="0 0 20 20"
-                    fill="currentColor"
-                  >
-                    <path
-                      fill-rule="evenodd"
-                      d="M10 9a3 3 0 100-6 3 3 0 000 6zm-7 9a7 7 0 1114 0H3z"
-                      clip-rule="evenodd"
-                    />
-                  </svg>
-                </div>
-                <input
-                  id="username"
-                  name="username"
-                  type="text"
-                  v-model="username"
-                  class="w-full pl-10 px-4 py-2.5 bg-white/50 dark:bg-gray-800/50 border border-gray-300 dark:border-gray-700 rounded-lg text-gray-900 dark:text-white placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-primary focus:border-transparent transition-all duration-300"
-                  placeholder="Votre nom d'utilisateur..."
-                />
-              </div>
-            </div>
-
-            <!-- Téléphone -->
-            <div class="relative">
-              <label
-                for="phone"
-                class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1"
-                >Téléphone (optionnel)</label
-              >
-              <div class="relative group">
-                <div
-                  class="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none"
-                >
-                  <svg
-                    xmlns="http://www.w3.org/2000/svg"
-                    class="h-5 w-5 text-gray-400 transition-all duration-300 group-focus-within:text-primary"
-                    viewBox="0 0 20 20"
-                    fill="currentColor"
-                  >
-                    <path
-                      d="M2 3a1 1 0 011-1h2.153a1 1 0 01.986.836l.74 4.435a1 1 0 01-.54 1.06l-1.548.773a11.037 11.037 0 006.105 6.105l.774-1.548a1 1 0 011.059-.54l4.435.74a1 1 0 01.836.986V17a1 1 0 01-1 1h-2C7.82 18 2 12.18 2 5V3z"
-                    />
-                  </svg>
-                </div>
-                <input
-                  id="phone"
-                  name="phone"
-                  type="tel"
-                  v-model="phone"
-                  class="w-full pl-10 px-4 py-2.5 bg-white/50 dark:bg-gray-800/50 border border-gray-300 dark:border-gray-700 rounded-lg text-gray-900 dark:text-white placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-primary focus:border-transparent transition-all duration-300"
-                  placeholder="Votre numéro de téléphone..."
-                />
-              </div>
-            </div>
-
-            <!-- Date de naissance -->
-            <div class="relative">
-              <label
-                for="birthDate"
-                class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1"
-                >Date de naissance (optionnel)</label
-              >
-              <div class="relative group">
-                <div
-                  class="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none"
-                >
-                  <svg
-                    xmlns="http://www.w3.org/2000/svg"
-                    class="h-5 w-5 text-gray-400 transition-all duration-300 group-focus-within:text-primary"
-                    viewBox="0 0 20 20"
-                    fill="currentColor"
-                  >
-                    <path
-                      fill-rule="evenodd"
-                      d="M6 2a1 1 0 00-1 1v1H4a2 2 0 00-2 2v10a2 2 0 002 2h12a2 2 0 002-2V6a2 2 0 00-2-2h-1V3a1 1 0 10-2 0v1H7V3a1 1 0 00-1-1zm0 5a1 1 0 000 2h8a1 1 0 100-2H6z"
-                      clip-rule="evenodd"
-                    />
-                  </svg>
-                </div>
-                <input
-                  id="birthDate"
-                  name="birthDate"
-                  type="date"
-                  v-model="birthDate"
-                  class="w-full pl-10 px-4 py-2.5 bg-white/50 dark:bg-gray-800/50 border border-gray-300 dark:border-gray-700 rounded-lg text-gray-900 dark:text-white placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-primary focus:border-transparent transition-all duration-300"
-                />
-              </div>
-            </div>
-          </div>
-
-          <!-- Description sur toute la largeur -->
-          <div class="relative">
-            <label
-              for="description"
-              class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1"
-              >Description (optionnel)</label
-            >
-            <div class="relative group">
-              <div
-                class="absolute top-3 left-3 flex items-start pointer-events-none"
-              >
-                <svg
-                  xmlns="http://www.w3.org/2000/svg"
-                  class="h-5 w-5 text-gray-400 transition-all duration-300 group-focus-within:text-primary"
-                  viewBox="0 0 20 20"
-                  fill="currentColor"
-                >
-                  <path
-                    fill-rule="evenodd"
-                    d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-8-3a1 1 0 00-.867.5 1 1 0 11-1.731-1A3 3 0 0113 8a3.001 3.001 0 01-2 2.83V11a1 1 0 11-2 0v-1a1 1 0 011-1 1 1 0 100-2zm0 8a1 1 0 100-2 1 1 0 000 2z"
-                    clip-rule="evenodd"
-                  />
-                </svg>
-              </div>
-              <textarea
-                id="description"
-                name="description"
-                v-model="description"
-                rows="2"
-                class="w-full pl-10 px-4 py-2.5 bg-white/50 dark:bg-gray-800/50 border border-gray-300 dark:border-gray-700 rounded-lg text-gray-900 dark:text-white placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-primary focus:border-transparent transition-all duration-300"
-                placeholder="Courte description à propos de vous..."
-              ></textarea>
-            </div>
-          </div>
-
-          <!-- Acceptation des conditions -->
-          <div class="flex items-center">
+            <!-- Acceptation des conditions -->
             <div class="flex items-center">
-              <input
-                id="terms"
-                name="terms"
-                type="checkbox"
-                required
-                v-model="acceptTerms"
-                class="h-4 w-4 bg-white/50 dark:bg-gray-800/50 border-gray-300 dark:border-gray-700 rounded text-primary focus:ring-primary transition-colors duration-200"
-              />
-              <label
-                for="terms"
-                class="ml-2 block text-sm text-gray-700 dark:text-gray-300"
-              >
-                J'accepte les conditions d'utilisation
-              </label>
+              <div class="flex items-center">
+                <input
+                  id="terms"
+                  name="terms"
+                  type="checkbox"
+                  required
+                  v-model="acceptTerms"
+                  class="h-4 w-4 bg-white/50 dark:bg-gray-800/50 border-gray-300 dark:border-gray-700 rounded text-primary focus:ring-primary transition-colors duration-200"
+                />
+                <label
+                  for="terms"
+                  class="ml-2 block text-sm text-gray-700 dark:text-gray-300"
+                >
+                  J'accepte les conditions d'utilisation
+                  <span class="text-red-500">*</span>
+                </label>
+              </div>
             </div>
-          </div>
 
-          <!-- Bouton de soumission -->
-          <div>
+            <!-- Bouton de soumission -->
             <button
               type="submit"
               :disabled="isLoading || !isFormValid"
-              class="w-full flex justify-center py-2.5 px-4 border border-transparent rounded-lg shadow-sm text-sm font-medium text-white bg-primary hover:bg-primary-dark focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-primary transition-all duration-300 relative overflow-hidden"
+              class="w-full flex justify-center py-2.5 px-4 border border-transparent rounded-lg shadow-sm text-sm font-medium text-white bg-primary hover:bg-primary-dark focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-primary transition-all duration-300 relative overflow-hidden cursor-pointer"
+              :class="{ 'cursor-not-allowed': isLoading || !isFormValid }"
             >
               <span class="relative z-10 flex items-center">
                 <span v-if="isLoading" class="mr-2">
@@ -373,21 +233,185 @@
                 class="absolute inset-0 bg-gradient-to-r from-primary-light to-primary-dark opacity-0 hover:opacity-50 transition-opacity duration-300"
               ></span>
             </button>
-          </div>
 
-          <!-- Lien de connexion -->
-          <div class="mt-4 text-center">
-            <p class="text-sm text-gray-500 dark:text-gray-400">
-              Vous avez déjà un compte ?
-              <router-link
-                to="/login"
-                class="text-primary hover:text-primary-dark transition-colors duration-200 font-medium"
-                >Se connecter</router-link
-              >
+            <p
+              class="mt-2 text-xs text-center text-gray-500 dark:text-gray-400"
+            >
+              <span class="text-red-500">*</span> Champs obligatoires
             </p>
+
+            <!-- Lien de connexion -->
+            <div class="mt-4 text-center">
+              <p class="text-sm text-gray-500 dark:text-gray-400">
+                Vous avez déjà un compte ?
+                <router-link
+                  to="/login"
+                  class="text-primary hover:text-primary-dark transition-colors duration-200 font-medium"
+                  >Se connecter</router-link
+                >
+              </p>
+            </div>
+          </form>
+        </FormCard>
+      </div>
+
+      <!-- Notifications à droite du formulaire -->
+      <div class="hidden md:block md:w-64 lg:w-72 pt-2">
+        <!-- Notification d'erreur -->
+        <div
+          v-if="error"
+          class="mb-4 text-red-100 text-xs bg-red-600 p-2 rounded-md shadow-md border-l-4 border-red-800 animate-pulse"
+        >
+          <div class="flex items-center">
+            <svg
+              xmlns="http://www.w3.org/2000/svg"
+              class="h-4 w-4 mr-1 flex-shrink-0"
+              viewBox="0 0 20 20"
+              fill="currentColor"
+            >
+              <path
+                fill-rule="evenodd"
+                d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-7 4a1 1 0 11-2 0 1 1 0 012 0zm-1-9a1 1 0 00-1 1v4a1 1 0 102 0V6a1 1 0 00-1-1z"
+                clip-rule="evenodd"
+              />
+            </svg>
+            <span class="text-sm">{{ error }}</span>
           </div>
-        </form>
-      </FormCard>
+          <button
+            @click="clearError"
+            class="absolute top-1 right-1 text-red-100 hover:text-white cursor-pointer"
+          >
+            <svg
+              xmlns="http://www.w3.org/2000/svg"
+              class="h-3 w-3"
+              viewBox="0 0 20 20"
+              fill="currentColor"
+            >
+              <path
+                fill-rule="evenodd"
+                d="M4.293 4.293a1 1 0 011.414 0L10 8.586l4.293-4.293a1 1 0 111.414 1.414L11.414 10l4.293 4.293a1 1 0 01-1.414 1.414L10 11.414l-4.293 4.293a1 1 0 01-1.414-1.414L8.586 10 4.293 5.707a1 1 0 010-1.414z"
+                clip-rule="evenodd"
+              />
+            </svg>
+          </button>
+        </div>
+
+        <!-- Notification de succès -->
+        <div
+          v-if="successMessage"
+          class="mb-4 text-green-100 text-xs bg-green-600 p-2 rounded-md shadow-md border-l-4 border-green-800 animate-pulse"
+        >
+          <div class="flex items-center">
+            <svg
+              xmlns="http://www.w3.org/2000/svg"
+              class="h-4 w-4 mr-1 flex-shrink-0"
+              viewBox="0 0 20 20"
+              fill="currentColor"
+            >
+              <path
+                fill-rule="evenodd"
+                d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z"
+                clip-rule="evenodd"
+              />
+            </svg>
+            <span class="text-sm">{{ successMessage }}</span>
+          </div>
+          <button
+            @click="successMessage = ''"
+            class="absolute top-1 right-1 text-green-100 hover:text-white cursor-pointer"
+          >
+            <svg
+              xmlns="http://www.w3.org/2000/svg"
+              class="h-3 w-3"
+              viewBox="0 0 20 20"
+              fill="currentColor"
+            >
+              <path
+                fill-rule="evenodd"
+                d="M4.293 4.293a1 1 0 011.414 0L10 8.586l4.293-4.293a1 1 0 111.414 1.414L11.414 10l4.293 4.293a1 1 0 01-1.414 1.414L10 11.414l-4.293 4.293a1 1 0 01-1.414-1.414L8.586 10 4.293 5.707a1 1 0 010-1.414z"
+                clip-rule="evenodd"
+              />
+            </svg>
+          </button>
+        </div>
+      </div>
+
+      <!-- Notifications pour mobile, plus petites -->
+      <div
+        v-if="error"
+        class="md:hidden fixed top-2 right-2 text-red-100 text-xs bg-red-600 p-2 rounded-md shadow-md border-l-4 border-red-800 animate-pulse z-50 max-w-[250px]"
+      >
+        <div class="flex items-center">
+          <svg
+            xmlns="http://www.w3.org/2000/svg"
+            class="h-4 w-4 mr-1 flex-shrink-0"
+            viewBox="0 0 20 20"
+            fill="currentColor"
+          >
+            <path
+              fill-rule="evenodd"
+              d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-7 4a1 1 0 11-2 0 1 1 0 012 0zm-1-9a1 1 0 00-1 1v4a1 1 0 102 0V6a1 1 0 00-1-1z"
+              clip-rule="evenodd"
+            />
+          </svg>
+          <span class="text-sm">{{ error }}</span>
+        </div>
+        <button
+          @click="clearError"
+          class="absolute top-1 right-1 text-red-100 hover:text-white cursor-pointer"
+        >
+          <svg
+            xmlns="http://www.w3.org/2000/svg"
+            class="h-3 w-3"
+            viewBox="0 0 20 20"
+            fill="currentColor"
+          >
+            <path
+              fill-rule="evenodd"
+              d="M4.293 4.293a1 1 0 011.414 0L10 8.586l4.293-4.293a1 1 0 111.414 1.414L11.414 10l4.293 4.293a1 1 0 01-1.414 1.414L10 11.414l-4.293 4.293a1 1 0 01-1.414-1.414L8.586 10 4.293 5.707a1 1 0 010-1.414z"
+              clip-rule="evenodd"
+            />
+          </svg>
+        </button>
+      </div>
+
+      <div
+        v-if="successMessage"
+        class="md:hidden fixed top-2 right-2 text-green-100 text-xs bg-green-600 p-2 rounded-md shadow-md border-l-4 border-green-800 animate-pulse z-50 max-w-[250px]"
+      >
+        <div class="flex items-center">
+          <svg
+            xmlns="http://www.w3.org/2000/svg"
+            class="h-4 w-4 mr-1 flex-shrink-0"
+            viewBox="0 0 20 20"
+            fill="currentColor"
+          >
+            <path
+              fill-rule="evenodd"
+              d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z"
+              clip-rule="evenodd"
+            />
+          </svg>
+          <span class="text-sm">{{ successMessage }}</span>
+        </div>
+        <button
+          @click="successMessage = ''"
+          class="absolute top-1 right-1 text-green-100 hover:text-white cursor-pointer"
+        >
+          <svg
+            xmlns="http://www.w3.org/2000/svg"
+            class="h-3 w-3"
+            viewBox="0 0 20 20"
+            fill="currentColor"
+          >
+            <path
+              fill-rule="evenodd"
+              d="M4.293 4.293a1 1 0 011.414 0L10 8.586l4.293-4.293a1 1 0 111.414 1.414L11.414 10l4.293 4.293a1 1 0 01-1.414 1.414L10 11.414l-4.293 4.293a1 1 0 01-1.414-1.414L8.586 10 4.293 5.707a1 1 0 010-1.414z"
+              clip-rule="evenodd"
+            />
+          </svg>
+        </button>
+      </div>
     </div>
   </AuthLayout>
 </template>
@@ -404,14 +428,11 @@ const authStore = useAuthStore();
 
 const firstName = ref("");
 const lastName = ref("");
-const username = ref("");
-const phone = ref("");
-const birthDate = ref("");
-const description = ref("");
 const email = ref("");
 const password = ref("");
 const acceptTerms = ref(false);
 const localError = ref("");
+const successMessage = ref("");
 
 // Utiliser les valeurs du store
 const isLoading = computed(() => authStore.isLoading);
@@ -444,20 +465,38 @@ const handleRegister = async () => {
       lastName: lastName.value,
       email: email.value,
       password: password.value,
-      username: username.value || undefined,
-      phone: phone.value || undefined,
-      birthDate: birthDate.value || undefined,
-      description: description.value || undefined,
     });
 
     if (success) {
-      // Rediriger vers la page de connexion après inscription réussie
-      router.push("/login");
+      // Afficher un message de succès
+      successMessage.value = "Compte créé avec succès ! Connexion en cours...";
+
+      // Connecter automatiquement l'utilisateur
+      const loginSuccess = await authStore.login(email.value, password.value);
+
+      if (loginSuccess) {
+        // Rediriger vers le tableau de bord
+        setTimeout(() => {
+          router.push("/dashboard");
+        }, 1500);
+      } else {
+        // Si la connexion automatique échoue, rediriger vers la page de connexion
+        successMessage.value =
+          "Compte créé avec succès ! Veuillez vous connecter.";
+        setTimeout(() => {
+          router.push("/login");
+        }, 1500);
+      }
     }
   } catch (err) {
     localError.value = "Échec de l'inscription. Veuillez réessayer.";
     console.error("Erreur d'inscription:", err);
   }
+};
+
+const clearError = () => {
+  localError.value = "";
+  authStore.setError(null);
 };
 
 // Computed pour afficher soit l'erreur locale, soit l'erreur du store
@@ -466,53 +505,39 @@ const error = computed(() => localError.value || storeError.value);
 
 <style scoped>
 /* Animation pour les champs du formulaire */
-form > div,
-.grid > div {
+form > div {
   animation: fadeIn 0.4s ease-out forwards;
   opacity: 0;
 }
 
-/* Animations séquentielles pour la grille */
-.grid > div:nth-child(1) {
-  animation-delay: 0.1s;
-}
-.grid > div:nth-child(2) {
-  animation-delay: 0.15s;
-}
-.grid > div:nth-child(3) {
-  animation-delay: 0.2s;
-}
-.grid > div:nth-child(4) {
-  animation-delay: 0.25s;
-}
-.grid > div:nth-child(5) {
-  animation-delay: 0.3s;
-}
-.grid > div:nth-child(6) {
-  animation-delay: 0.35s;
-}
-.grid > div:nth-child(7) {
-  animation-delay: 0.4s;
-}
-.grid > div:nth-child(8) {
-  animation-delay: 0.45s;
-}
-
-/* Animations pour les éléments hors de la grille */
 form > div:nth-child(1) {
   animation-delay: 0.05s;
 }
+form > div:nth-child(2) {
+  animation-delay: 0.1s;
+}
 form > div:nth-child(3) {
-  animation-delay: 0.5s;
+  animation-delay: 0.15s;
 }
 form > div:nth-child(4) {
-  animation-delay: 0.55s;
+  animation-delay: 0.2s;
 }
 form > div:nth-child(5) {
-  animation-delay: 0.6s;
+  animation-delay: 0.25s;
 }
 form > div:nth-child(6) {
-  animation-delay: 0.65s;
+  animation-delay: 0.3s;
+}
+form > div:nth-child(7) {
+  animation-delay: 0.35s;
+}
+form > button {
+  animation: fadeIn 0.4s ease-out 0.4s forwards;
+  opacity: 0;
+}
+form > p {
+  animation: fadeIn 0.4s ease-out 0.45s forwards;
+  opacity: 0;
 }
 
 @keyframes fadeIn {
@@ -546,9 +571,16 @@ form > div:nth-child(6) {
 button:not(:disabled):hover {
   transform: translateY(-2px);
   box-shadow: 0 4px 12px rgba(var(--color-primary-rgb), 0.3);
+  cursor: pointer;
 }
 
 button:not(:disabled):active {
   transform: translateY(0);
+  cursor: pointer;
+}
+
+button:disabled {
+  cursor: not-allowed;
+  opacity: 0.7;
 }
 </style>

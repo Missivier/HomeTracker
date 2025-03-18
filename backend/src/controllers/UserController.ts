@@ -1,3 +1,4 @@
+import bcryptjs from "bcryptjs";
 import { FastifyReply, FastifyRequest } from "fastify";
 import prisma from "../services/prisma.js";
 import { ApiResponse } from "../types/index.js";
@@ -335,8 +336,9 @@ const UserController = {
         return reply.code(401).send(response);
       }
 
-      // Vérifier le mot de passe (en production, utilisez bcrypt pour comparer)
-      if (user.password !== password) {
+      // Vérifier le mot de passe avec bcryptjs
+      const passwordMatch = await bcryptjs.compare(password, user.password);
+      if (!passwordMatch) {
         const response: ApiResponse<null> = {
           success: false,
           message: "Email ou mot de passe incorrect",
@@ -402,13 +404,17 @@ const UserController = {
         return reply.code(400).send(response);
       }
 
+      // Hachage du mot de passe avec bcryptjs
+      const saltRounds = 10;
+      const hashedPassword = await bcryptjs.hash(password, saltRounds);
+
       // Création du nouvel utilisateur
       const newUser = await prisma.user.create({
         data: {
           lastName,
           firstName,
           email,
-          password, // Idéalement, hashé avant stockage
+          password: hashedPassword, // Mot de passe haché
           roleId,
           username,
           phone,
