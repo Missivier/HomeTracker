@@ -29,6 +29,11 @@ interface UpdateUserBody {
   houseId?: number;
 }
 
+interface LoginUserBody {
+  email: string;
+  password: string;
+}
+
 const UserController = {
   // Récupérer tous les utilisateurs
   async getAll(request: FastifyRequest, reply: FastifyReply) {
@@ -289,6 +294,157 @@ const UserController = {
         success: false,
         error: error instanceof Error ? error.message : "Erreur inconnue",
         message: "Erreur lors de la suppression de l'utilisateur",
+      };
+
+      return reply.code(500).send(response);
+    }
+  },
+
+  // Authentifier un utilisateur
+  async login(
+    request: FastifyRequest<{ Body: LoginUserBody }>,
+    reply: FastifyReply
+  ) {
+    try {
+      const { email, password } = request.body;
+
+      // Rechercher l'utilisateur par email
+      const user = await prisma.user.findUnique({
+        where: { email },
+        select: {
+          id: true,
+          lastName: true,
+          firstName: true,
+          email: true,
+          password: true, // Pour la vérification
+          username: true,
+          phone: true,
+          birthDate: true,
+          description: true,
+          roleId: true,
+          houseId: true,
+        },
+      });
+
+      // Vérifier si l'utilisateur existe
+      if (!user) {
+        const response: ApiResponse<null> = {
+          success: false,
+          message: "Email ou mot de passe incorrect",
+        };
+        return reply.code(401).send(response);
+      }
+
+      // Vérifier le mot de passe (en production, utilisez bcrypt pour comparer)
+      if (user.password !== password) {
+        const response: ApiResponse<null> = {
+          success: false,
+          message: "Email ou mot de passe incorrect",
+        };
+        return reply.code(401).send(response);
+      }
+
+      // Utilisateur authentifié avec succès
+      // Ne pas renvoyer le mot de passe
+      const { password: _, ...userWithoutPassword } = user;
+
+      // Pour une véritable mise en oeuvre, vous devriez générer un JWT ici
+      const token = "jwt_token_" + user.id; // Placeholder, utilisez jsonwebtoken en production
+
+      const response: ApiResponse<
+        typeof userWithoutPassword & { token: string }
+      > = {
+        success: true,
+        data: { ...userWithoutPassword, token },
+        message: "Authentification réussie",
+      };
+
+      return reply.code(200).send(response);
+    } catch (error) {
+      const response: ApiResponse<null> = {
+        success: false,
+        error: error instanceof Error ? error.message : "Erreur inconnue",
+        message: "Erreur lors de l'authentification",
+      };
+
+      return reply.code(500).send(response);
+    }
+  },
+
+  // Enregistrer un nouvel utilisateur (avec authentification)
+  async register(
+    request: FastifyRequest<{ Body: CreateUserBody }>,
+    reply: FastifyReply
+  ) {
+    try {
+      const {
+        lastName,
+        firstName,
+        email,
+        password,
+        roleId,
+        username,
+        phone,
+        birthDate,
+        description,
+      } = request.body;
+
+      // Vérifier si l'email existe déjà
+      const existingUser = await prisma.user.findFirst({
+        where: { email },
+      });
+
+      if (existingUser) {
+        const response: ApiResponse<null> = {
+          success: false,
+          message: "Cet email est déjà utilisé par un autre compte.",
+        };
+        return reply.code(400).send(response);
+      }
+
+      // Création du nouvel utilisateur
+      const newUser = await prisma.user.create({
+        data: {
+          lastName,
+          firstName,
+          email,
+          password, // Idéalement, hashé avant stockage
+          roleId,
+          username,
+          phone,
+          birthDate: birthDate ? new Date(birthDate) : undefined,
+          description,
+          inscriptionDate: new Date(),
+        },
+        select: {
+          id: true,
+          lastName: true,
+          firstName: true,
+          email: true,
+          username: true,
+          phone: true,
+          birthDate: true,
+          inscriptionDate: true,
+          description: true,
+          roleId: true,
+        },
+      });
+
+      // Pour une implémentation réelle, vous devriez générer un JWT ici
+      const token = "jwt_token_" + newUser.id; // Placeholder, utilisez jsonwebtoken en production
+
+      const response: ApiResponse<typeof newUser & { token: string }> = {
+        success: true,
+        data: { ...newUser, token },
+        message: "Utilisateur créé et authentifié avec succès",
+      };
+
+      return reply.code(201).send(response);
+    } catch (error) {
+      const response: ApiResponse<null> = {
+        success: false,
+        error: error instanceof Error ? error.message : "Erreur inconnue",
+        message: "Erreur lors de la création de l'utilisateur",
       };
 
       return reply.code(500).send(response);

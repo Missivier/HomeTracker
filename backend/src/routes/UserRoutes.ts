@@ -141,6 +141,37 @@ const userRoutes: FastifyPluginAsync = async (
     },
     handler: UserController.delete,
   });
+
+  // LOGIN route
+  fastify.post("/login", {
+    schema: {
+      body: {
+        type: "object",
+        required: ["email", "password"],
+        properties: {
+          email: { type: "string", format: "email" },
+          password: { type: "string" },
+        },
+      },
+      response: {
+        200: apiResponseSchema,
+        401: apiResponseSchema,
+      },
+    },
+    handler: UserController.login,
+  });
+
+  // REGISTER route
+  fastify.post("/register", {
+    schema: {
+      body: createUserSchema,
+      response: {
+        201: apiResponseSchema,
+        400: apiResponseSchema,
+      },
+    },
+    handler: UserController.register,
+  });
 };
 
 export default userRoutes;

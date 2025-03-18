@@ -41,7 +41,7 @@
           class="relative rounded-xl overflow-hidden shadow-xl dark:shadow-gray-800/30 mb-16"
         >
           <img
-            src="@/assets/auth-background.svg"
+            src="../assets/auth-background.svg"
             alt="Aperçu du Dashboard"
             class="w-full h-auto rounded-xl"
           />
@@ -131,9 +131,9 @@
 </template>
 
 <script setup lang="ts">
-import Button from "@/components/Button.vue";
-import Card from "@/components/Card.vue";
-import ThemeToggle from "@/components/ThemeToggle.vue";
+import Button from "../components/Button.vue";
+import Card from "../components/Card.vue";
+import ThemeToggle from "../components/ThemeToggle.vue";
 
 // Données pour les fonctionnalités
 const features = [

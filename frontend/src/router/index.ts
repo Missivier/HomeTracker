@@ -1,60 +1,62 @@
 import { createRouter, createWebHistory } from "vue-router";
+import type { RouteRecordRaw } from "vue-router";
 import { useAuthStore } from "../stores/auth";
+import Home from "../pages/Home.vue";
+import Login from "../pages/Auth/Login.vue";
+import Register from "../pages/Auth/Register.vue";
+import Dashboard from "../pages/Dashboard.vue";
 
-// Routes
-const routes = [
+const routes: RouteRecordRaw[] = [
   {
     path: "/",
-    redirect: "/login",
+    name: "home",
+    component: Home,
   },
   {
     path: "/login",
     name: "login",
-    component: () => import("../views/Auth/Login.vue"),
-    meta: { requiresAuth: false, isAuthPage: true },
+    component: Login,
+    meta: { requiresGuest: true },
   },
   {
     path: "/register",
     name: "register",
-    component: () => import("../views/Auth/Register.vue"),
-    meta: { requiresAuth: false, isAuthPage: true },
+    component: Register,
+    meta: { requiresGuest: true },
   },
   {
     path: "/dashboard",
     name: "dashboard",
-    component: () => import("../views/Dashboard/DashboardView.vue"),
+    component: Dashboard,
     meta: { requiresAuth: true },
   },
+  // Route 404
   {
     path: "/:pathMatch(.*)*",
-    redirect: "/login",
+    name: "not-found",
+    redirect: { name: "home" },
   },
 ];
 
-// Création du router
 const router = createRouter({
-  history: createWebHistory(import.meta.env.BASE_URL),
+  history: createWebHistory(),
   routes,
 });
 
-// Navigation guard pour l'authentification
-router.beforeEach((to, from, next) => {
+// Navigation guards
+router.beforeEach((to, _, next) => {
   const authStore = useAuthStore();
+  const requiresAuth = to.matched.some((record) => record.meta.requiresAuth);
+  const requiresGuest = to.matched.some((record) => record.meta.requiresGuest);
 
-  // Initialiser l'authentification
-  if (!from.name) {
-    authStore.init();
-  }
-
-  // Redirection en fonction de l'authentification
-  if (to.meta.requiresAuth && !authStore.isAuthenticated) {
-    // Rediriger vers la page de connexion si l'authentification est requise
+  if (requiresAuth && !authStore.isAuthenticated) {
+    // Rediriger vers la page de connexion si l'utilisateur n'est pas authentifié
     next({ name: "login" });
-  } else if (to.meta.isAuthPage && authStore.isAuthenticated) {
-    // Rediriger vers le tableau de bord si déjà connecté
+  } else if (requiresGuest && authStore.isAuthenticated) {
+    // Rediriger vers le tableau de bord si l'utilisateur est déjà authentifié
     next({ name: "dashboard" });
   } else {
-    // Autoriser la navigation
+    // Continuer normalement
     next();
   }
 });

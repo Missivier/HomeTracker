@@ -1,15 +1,14 @@
 <template>
   <button
     @click="toggleTheme"
-    class="theme-toggle"
-    :aria-label="isDark ? 'Mode clair' : 'Mode sombre'"
+    class="p-2 rounded-full bg-gray-100 dark:bg-gray-800 text-gray-800 dark:text-gray-200 hover:bg-gray-200 dark:hover:bg-gray-700 transition-colors duration-200 focus:outline-none focus:ring-2 focus:ring-primary focus:ring-offset-2 dark:focus:ring-offset-gray-900"
+    aria-label="Basculer le thème"
   >
     <!-- Icône soleil pour le mode sombre -->
     <svg
       v-if="isDark"
       xmlns="http://www.w3.org/2000/svg"
-      width="20"
-      height="20"
+      class="h-5 w-5"
       viewBox="0 0 20 20"
       fill="currentColor"
     >
@@ -23,8 +22,7 @@
     <svg
       v-else
       xmlns="http://www.w3.org/2000/svg"
-      width="20"
-      height="20"
+      class="h-5 w-5"
       viewBox="0 0 20 20"
       fill="currentColor"
     >
@@ -36,7 +34,7 @@
 </template>
 
 <script setup lang="ts">
-import { onMounted, ref } from "vue";
+import { ref, onMounted } from "vue";
 
 // État du thème
 const isDark = ref(false);
@@ -73,37 +71,50 @@ onMounted(() => {
 
   // Appliquer le thème
   updateTheme();
+
+  // Écouter les changements de préférences système
+  window
+    .matchMedia("(prefers-color-scheme: dark)")
+    .addEventListener("change", (e) => {
+      if (!localStorage.getItem("theme")) {
+        isDark.value = e.matches;
+        updateTheme();
+      }
+    });
 });
 </script>
 
 <style scoped>
-.theme-toggle {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  width: 2.5rem;
-  height: 2.5rem;
-  border-radius: 50%;
-  background-color: #f3f4f6;
-  color: #4b5563;
-  cursor: pointer;
-  transition: all 0.3s ease;
-  border: none;
-  outline: none;
+button {
+  position: relative;
+  overflow: hidden;
 }
 
-:global(.dark) .theme-toggle {
-  background-color: #374151;
-  color: #d1d5db;
+button::after {
+  content: "";
+  position: absolute;
+  width: 100%;
+  height: 100%;
+  top: 0;
+  left: 0;
+  pointer-events: none;
+  background-image: radial-gradient(
+    circle,
+    rgba(255, 255, 255, 0.3) 10%,
+    transparent 10.01%
+  );
+  background-repeat: no-repeat;
+  background-position: 50%;
+  transform: scale(10, 10);
+  opacity: 0;
+  transition:
+    transform 0.3s,
+    opacity 0.5s;
 }
 
-.theme-toggle:hover {
-  background-color: var(--color-primary);
-  color: white;
-}
-
-.theme-toggle:focus {
-  box-shadow: 0 0 0 3px rgba(var(--color-primary-rgb), 0.5);
-  outline: none;
+button:active::after {
+  transform: scale(0, 0);
+  opacity: 0.3;
+  transition: 0s;
 }
 </style>

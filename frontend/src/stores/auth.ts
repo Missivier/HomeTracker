@@ -2,29 +2,18 @@ import { defineStore } from "pinia";
 import { computed, ref } from "vue";
 
 export interface User {
-  id: string;
-  lastName: string;
+  id: number;
+  name?: string;
   firstName: string;
-  username?: string;
-  phone?: string;
+  lastName: string;
   email: string;
-  birthDate?: Date;
-  description?: string;
+  username?: string;
+  roleId: number;
+  token?: string;
 }
 
-export interface RegisterData {
-  lastName: string;
-  firstName: string;
-  email: string;
-  password: string;
-  username?: string;
-  phone?: string;
-  birthDate?: string;
-  description?: string;
-}
-
-// URL de l'API backend
-const API_URL = import.meta.env.VITE_API_URL || "http://localhost:3000";
+// URL de base de l'API
+const API_BASE_URL = "http://localhost:3000/api";
 
 export const useAuthStore = defineStore("auth", () => {
   // État
@@ -32,9 +21,9 @@ export const useAuthStore = defineStore("auth", () => {
   const token = ref<string | null>(null);
   const isLoading = ref(false);
   const error = ref<string | null>(null);
-  const isAuthenticated = ref(false);
 
   // Getters
+  const isAuthenticated = computed(() => !!token.value);
   const userFullName = computed(() => {
     if (!user.value) return "";
     return `${user.value.firstName} ${user.value.lastName}`;
@@ -58,24 +47,69 @@ export const useAuthStore = defineStore("auth", () => {
     error.value = message;
   }
 
-  async function register(userData: RegisterData) {
+  async function login(email: string, password: string) {
     isLoading.value = true;
     error.value = null;
 
     try {
-      // Préparer les données pour l'API (ajouter roleId requis par le backend)
-      const apiData = {
-        ...userData,
-        roleId: 1, // Utiliser le rôle par défaut (1 = utilisateur standard)
-      };
-
-      // Appel API réel au backend
-      const response = await fetch(`${API_URL}/api/users`, {
+      const response = await fetch(`${API_BASE_URL}/users/login`, {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
         },
-        body: JSON.stringify(apiData),
+        body: JSON.stringify({ email, password }),
+      });
+
+      const data = await response.json();
+
+      if (!response.ok) {
+        throw new Error(data.message || "Échec de la connexion");
+      }
+
+      if (!data.success || !data.data) {
+        throw new Error(data.message || "Données de réponse invalides");
+      }
+
+      // Stocker le token et les informations utilisateur
+      setUser(data.data);
+      setToken(data.data.token);
+
+      return true;
+    } catch (err) {
+      const errorMessage =
+        err instanceof Error
+          ? err.message
+          : "Échec de la connexion. Veuillez vérifier vos identifiants.";
+      setError(errorMessage);
+      console.error("Erreur de connexion:", err);
+      return false;
+    } finally {
+      isLoading.value = false;
+    }
+  }
+
+  async function register(userData: {
+    firstName: string;
+    lastName: string;
+    email: string;
+    password: string;
+  }) {
+    isLoading.value = true;
+    error.value = null;
+
+    try {
+      // Nous devons spécifier un roleId pour que l'inscription fonctionne
+      const registerData = {
+        ...userData,
+        roleId: 1, // Rôle par défaut (utilisateur standard)
+      };
+
+      const response = await fetch(`${API_BASE_URL}/users/register`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify(registerData),
       });
 
       const data = await response.json();
@@ -84,10 +118,10 @@ export const useAuthStore = defineStore("auth", () => {
         throw new Error(data.message || "Échec de l'inscription");
       }
 
-      console.log("Inscription réussie:", data);
-      setUser(data.user);
-      setToken(data.token);
-      isAuthenticated.value = true;
+      if (!data.success) {
+        throw new Error(data.message || "Données de réponse invalides");
+      }
+
       return true;
     } catch (err) {
       const errorMessage =
@@ -102,70 +136,18 @@ export const useAuthStore = defineStore("auth", () => {
     }
   }
 
-  async function login(email: string, password: string) {
-    isLoading.value = true;
-    error.value = null;
-
-    try {
-      // Simuler un délai de réseau
-      await new Promise((resolve) => setTimeout(resolve, 1000));
-
-      // Vérification simple (pour prototype)
-      if (email && password.length >= 6) {
-        user.value = {
-          id: "1",
-          lastName: "Dupont",
-          firstName: "Jean",
-          email,
-        };
-        setUser(user.value);
-        setToken("mock_jwt_token");
-        isAuthenticated.value = true;
-
-        // Stocker dans localStorage pour la persistance
-        localStorage.setItem("auth_user", JSON.stringify(user.value));
-        localStorage.setItem("is_authenticated", "true");
-
-        return true;
-      } else {
-        error.value = "Identifiants incorrects";
-        return false;
-      }
-    } catch (err) {
-      error.value = "Une erreur est survenue lors de la connexion";
-      return false;
-    } finally {
-      isLoading.value = false;
-    }
-  }
-
-  async function logout() {
+  function logout() {
     setUser(null);
     setToken(null);
-    isAuthenticated.value = false;
-
-    // Nettoyer localStorage
-    localStorage.removeItem("auth_user");
-    localStorage.removeItem("is_authenticated");
-
-    return true;
   }
 
   // Initialisation - Récupérer le token du localStorage au démarrage
   function init() {
     const savedToken = localStorage.getItem("auth_token");
-    const storedUser = localStorage.getItem("auth_user");
-    const storedAuth = localStorage.getItem("is_authenticated");
-
     if (savedToken) {
       token.value = savedToken;
-      // Dans un cas réel, vous feriez un appel API pour récupérer les infos utilisateur
+      // Dans un cas réel, vous feriez un appel API pour récupérer les infos utilisateur avec le token
       // fetchUserProfile();
-    }
-
-    if (storedUser && storedAuth === "true") {
-      user.value = JSON.parse(storedUser);
-      isAuthenticated.value = true;
     }
   }
 
@@ -175,15 +157,15 @@ export const useAuthStore = defineStore("auth", () => {
     token,
     isLoading,
     error,
-    isAuthenticated,
 
     // Getters
+    isAuthenticated,
     userFullName,
 
     // Actions
-    register,
     login,
     logout,
+    register,
     setUser,
     setToken,
     setError,

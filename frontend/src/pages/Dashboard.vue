@@ -289,6 +289,7 @@ import { useRouter } from "vue-router";
 import Button from "../components/Button.vue";
 import Card from "../components/Card.vue";
 import ThemeToggle from "../components/ThemeToggle.vue";
+import DashboardLayout from "../layouts/DashboardLayout.vue";
 import { useAuthStore } from "../stores/auth";
 
 const router = useRouter();
